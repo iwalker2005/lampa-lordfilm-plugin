@@ -1,4 +1,6 @@
-﻿const VERSION = '1.0.0';
+const VERSION = '1.0.1';
+
+const PLUGIN_REDIRECT_URL = 'https://cdn.jsdelivr.net/gh/iwalker2005/lampa-lordfilm-plugin@main/lordfilm.js';
 
 const DEFAULT_ALLOWED_HOSTS = [
   'lordfilm-2026.org',
@@ -123,6 +125,10 @@ export default {
 
     if (request.method === 'OPTIONS') {
       return new Response(null, { status: 204, headers: corsHeaders() });
+    }
+
+    if (url.pathname === '/p' || url.pathname === '/plugin' || url.pathname === '/plugin.js') {
+      return Response.redirect(PLUGIN_REDIRECT_URL, 302);
     }
 
     if (url.pathname === '/health') {

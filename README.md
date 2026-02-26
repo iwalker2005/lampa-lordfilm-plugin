@@ -17,6 +17,7 @@
 ## Подключение в Lampa
 1. Используйте стабильную ссылку с корректным JS MIME:
    - `https://cdn.jsdelivr.net/gh/iwalker2005/lampa-lordfilm-plugin@main/lordfilm.js`
+   - короткая ссылка через Worker: `https://lordfilm-proxy-iwalker2005.ivonin38.workers.dev/p`
 2. Альтернатива (может блокироваться в части окружений): `raw.githubusercontent.com`.
 2. В Lampa откройте: `Настройки -> Расширения -> Добавить плагин -> URL`.
 3. Вставьте ссылку и подтвердите установку.
@@ -73,6 +74,10 @@ Lampa.Storage.set('lordfilm_base_url', 'https://lordfilm-2026.org');
 ### 1.0.3
 - добавлен прокси URL по умолчанию (без ручной настройки)
 - обновлен дефолтный запуск через готовый Cloudflare Worker
+
+### 1.0.4
+- исправлен вывод `[object Object]` в списке серий
+- добавлена короткая ссылка плагина через Worker (`/p`)
 
 ### 1.0.0
 - реализован `lordfilm.js` (MVP)

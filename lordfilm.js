@@ -3,7 +3,7 @@
 if(window.lordfilm_plugin_ready) return;
 window.lordfilm_plugin_ready = true;
 
-var VERSION = '1.0.3';
+var VERSION = '1.0.4';
 var STORAGE = {
   favorites:'lordfilm_favorites',
   progress:'lordfilm_progress',
@@ -274,6 +274,16 @@ function ensureAssets(){
   Lampa.Template.add('lordfilm_item','<div class="lordfilm-item selector"><div class="lordfilm-item__title">{title}</div><div class="lordfilm-item__meta">{meta}</div><div class="lordfilm-item__badge">{badge}</div></div>');
 }
 
+function timelineDetailsString(timeline){
+  if(!timeline || !window.Lampa || !Lampa.Timeline || !Lampa.Timeline.details) return '';
+  try{
+    var details = Lampa.Timeline.details(timeline,' / ');
+    if(typeof details === 'string') return details;
+    if(details && typeof details.text === 'function') return details.text() || '';
+  }catch(e){}
+  return '';
+}
+
 function component(object){
   var _this=this;
   var meta=cardMeta(object), cf=conf();
@@ -315,7 +325,11 @@ function component(object){
       var m=en.subtitle||''; if(en.timeline&&en.timeline.time) m+=(m?' / ':'')+'Позиция: '+fmt(en.timeline.time);
       var b=''; if(en.current) b='▶ Текущая'; else if(en.viewed) b='✓ Просмотрено';
       var item=Lampa.Template.get('lordfilm_item',{title:en.title,meta:m,badge:b});
-      if(en.timeline){ item.append(Lampa.Timeline.render(en.timeline)); if(Lampa.Timeline.details) item.find('.lordfilm-item__meta').append(' / '+Lampa.Timeline.details(en.timeline,' / ')); }
+      if(en.timeline){
+        item.append(Lampa.Timeline.render(en.timeline));
+        var d=timelineDetailsString(en.timeline);
+        if(d) item.find('.lordfilm-item__meta').append(' / '+d);
+      }
       item.on('hover:enter',function(){ playEntry(en); }); append(item);
     });
     _this.start(true);
