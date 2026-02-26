@@ -3,7 +3,7 @@
 if(window.lordfilm_plugin_ready) return;
 window.lordfilm_plugin_ready = true;
 
-var VERSION = '1.0.2';
+var VERSION = '1.0.3';
 var STORAGE = {
   favorites:'lordfilm_favorites',
   progress:'lordfilm_progress',
@@ -13,7 +13,7 @@ var STORAGE = {
   proxyToken:'lordfilm_proxy_token',
   matchCache:'lordfilm_match_cache'
 };
-var DEFAULTS = {baseUrl:'https://lordfilm-2026.org', proxyUrl:'', proxyToken:'', timeout:15000, useStreamProxy:true};
+var DEFAULTS = {baseUrl:'https://lordfilm-2026.org', proxyUrl:'https://lordfilm-proxy-iwalker2005.ivonin38.workers.dev', proxyToken:'', timeout:15000, useStreamProxy:true};
 var CONTEXT_BTN_CLASS = 'lordfilm-start-btn';
 var watchers = {interval:null, entry:null};
 

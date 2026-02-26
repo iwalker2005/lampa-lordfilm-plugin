@@ -28,6 +28,10 @@
 - `lordfilm_proxy_token`
 - `lordfilm_base_url` (по умолчанию `https://lordfilm-2026.org`)
 
+По умолчанию уже прописан рабочий Cloudflare Worker:
+- `lordfilm_proxy_url = https://lordfilm-proxy-iwalker2005.ivonin38.workers.dev`
+- `lordfilm_proxy_token = ''` (не обязателен)
+
 Пример (в консоли Lampa/Web, после деплоя Worker):
 
 ```js
@@ -65,6 +69,10 @@ Lampa.Storage.set('lordfilm_base_url', 'https://lordfilm-2026.org');
 - улучшена инициализация плагина (app-ready bootstrap)
 - улучшено добавление кнопки в меню `Источник`
 - рекомендация подключения через jsDelivr
+
+### 1.0.3
+- добавлен прокси URL по умолчанию (без ручной настройки)
+- обновлен дефолтный запуск через готовый Cloudflare Worker
 
 ### 1.0.0
 - реализован `lordfilm.js` (MVP)
