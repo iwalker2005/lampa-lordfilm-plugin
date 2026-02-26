@@ -1,6 +1,6 @@
-const VERSION = '1.0.1';
+const VERSION = '1.0.2';
 
-const PLUGIN_REDIRECT_URL = 'https://cdn.jsdelivr.net/gh/iwalker2005/lampa-lordfilm-plugin@main/lordfilm.js';
+const PLUGIN_SOURCE_URL = 'https://cdn.jsdelivr.net/gh/iwalker2005/lampa-lordfilm-plugin@main/lordfilm.js';
 
 const DEFAULT_ALLOWED_HOSTS = [
   'lordfilm-2026.org',
@@ -127,8 +127,21 @@ export default {
       return new Response(null, { status: 204, headers: corsHeaders() });
     }
 
-    if (url.pathname === '/p' || url.pathname === '/plugin' || url.pathname === '/plugin.js') {
-      return Response.redirect(PLUGIN_REDIRECT_URL, 302);
+    if (url.pathname === '/' || url.pathname === '/p' || url.pathname === '/plugin' || url.pathname === '/plugin.js') {
+      try {
+        const upstream = await fetch(PLUGIN_SOURCE_URL, { method: 'GET', redirect: 'follow' });
+        if (!upstream.ok) return json({ status: upstream.status, error: 'Plugin source is unavailable' }, upstream.status);
+        const body = await upstream.text();
+        return new Response(body, {
+          status: 200,
+          headers: corsHeaders({
+            'Content-Type': 'application/javascript; charset=utf-8',
+            'Cache-Control': 'public, max-age=300'
+          })
+        });
+      } catch (e) {
+        return json({ status: 502, error: 'Plugin endpoint failed' }, 502);
+      }
     }
 
     if (url.pathname === '/health') {
