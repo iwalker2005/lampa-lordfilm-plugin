@@ -3,7 +3,7 @@
 if(window.lordfilm_plugin_ready) return;
 window.lordfilm_plugin_ready = true;
 
-var VERSION = '1.0.1';
+var VERSION = '1.0.2';
 var STORAGE = {
   favorites:'lordfilm_favorites',
   progress:'lordfilm_progress',
@@ -415,20 +415,48 @@ function component(object){
   this.destroy=function(){ stopWatcher(); network.clear(); files.destroy(); scroll.destroy(); st.entries=[]; };
 }
 
-function addButton(){
+function openLordFilmFromCard(movie){
+  Lampa.Component.add('lordfilm',component);
+  Lampa.Activity.push({
+    url:'',
+    title:'LordFilm',
+    component:'lordfilm',
+    search:(movie&&movie.title)||'',
+    search_one:(movie&&movie.title)||'',
+    search_two:(movie&&movie.original_title)||'',
+    movie:movie||{},
+    page:1
+  });
+}
+
+function appendSourceButton(root,movie){
+  if(!root||!root.find) return;
+  if(root.find('.'+CONTEXT_BTN_CLASS).length) return;
+
   var icon='<svg viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg"><circle cx="64" cy="64" r="56" stroke="currentColor" stroke-width="12" fill="none"/><path d="M88 64L48 88V40z" fill="currentColor"/></svg>';
+  var btn=$('<div class="full-start__button selector '+CONTEXT_BTN_CLASS+'" data-subtitle="LordFilm '+VERSION+'">'+icon+'<span>LordFilm</span></div>');
+  btn.on('hover:enter',function(){ openLordFilmFromCard(movie||{}); });
+
+  var trg=root.find('.buttons--container .view--torrent');
+  if(trg.length){ trg.after(btn); return; }
+
+  var btnContainer=root.find('.buttons--container');
+  if(btnContainer.length){ btnContainer.append(btn); return; }
+}
+
+function addButton(){
   Lampa.Listener.follow('full',function(e){
     if(e.type!=='complite') return;
     var root=e.object.activity.render();
-    if(root.find('.'+CONTEXT_BTN_CLASS).length) return;
-    var btn=$('<div class="full-start__button selector '+CONTEXT_BTN_CLASS+'">'+icon+'<span>LordFilm</span></div>');
-    btn.on('hover:enter',function(){
-      Lampa.Component.add('lordfilm',component);
-      Lampa.Activity.push({url:'',title:'LordFilm',component:'lordfilm',search:e.data.movie.title,search_one:e.data.movie.title,search_two:e.data.movie.original_title,movie:e.data.movie,page:1});
-    });
-    var trg=root.find('.view--torrent');
-    if(trg.length) trg.after(btn); else root.find('.full-start').append(btn);
+    appendSourceButton(root,e.data&&e.data.movie?e.data.movie:{});
   });
+
+  try{
+    var active=Lampa.Activity.active&&Lampa.Activity.active();
+    if(active&&active.component==='full'&&active.activity&&active.activity.render){
+      appendSourceButton(active.activity.render(),active.card||active.movie||{});
+    }
+  }catch(e){}
 }
 
 function init(){
@@ -449,7 +477,23 @@ function init(){
   log('initialized',VERSION);
 }
 
-if(!window.Lampa) setTimeout(init,1000);
-else init();
+function bootstrap(){
+  if(window.lordfilm_plugin_bootstrapped) return;
+  window.lordfilm_plugin_bootstrapped=true;
+
+  var start=function(){
+    try{ init(); }
+    catch(e){ console.error('[LordFilm] init error',e); }
+  };
+
+  if(window.appready) start();
+  else if(window.Lampa&&Lampa.Listener){
+    Lampa.Listener.follow('app',function(e){ if(e.type==='ready') start(); });
+    setTimeout(start,2500);
+  }
+  else setTimeout(start,1500);
+}
+
+bootstrap();
 
 })();

@@ -15,10 +15,12 @@
 - `docs/ТЗ_LordFilm_Lampa_v1.1.md` — ТЗ
 
 ## Подключение в Lampa
-1. Используйте прямую ссылку на плагин:
-   - `https://raw.githubusercontent.com/iwalker2005/lampa-lordfilm-plugin/main/lordfilm.js`
+1. Используйте стабильную ссылку с корректным JS MIME:
+   - `https://cdn.jsdelivr.net/gh/iwalker2005/lampa-lordfilm-plugin@main/lordfilm.js`
+2. Альтернатива (может блокироваться в части окружений): `raw.githubusercontent.com`.
 2. В Lampa откройте: `Настройки -> Расширения -> Добавить плагин -> URL`.
 3. Вставьте ссылку и подтвердите установку.
+4. Полностью перезапустите Lampa и заново откройте карточку фильма.
 
 ## Обязательная настройка прокси
 Плагин использует ключи `Lampa.Storage`:
@@ -58,6 +60,11 @@ Lampa.Storage.set('lordfilm_base_url', 'https://lordfilm-2026.org');
 ### 1.0.1
 - фикс инициализации (`watchers`, `CONTEXT_BTN_CLASS`, `log`)
 - добавлена рабочая GitHub-ссылка для подключения плагина в Lampa
+
+### 1.0.2
+- улучшена инициализация плагина (app-ready bootstrap)
+- улучшено добавление кнопки в меню `Источник`
+- рекомендация подключения через jsDelivr
 
 ### 1.0.0
 - реализован `lordfilm.js` (MVP)
