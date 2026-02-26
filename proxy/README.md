@@ -31,15 +31,17 @@ UPSTREAM_TIMEOUT_MS=12000
    ```bash
    npm i -g wrangler
    ```
-2. Авторизуйтесь:
+2. Авторизуйтесь одним из способов:
+   - OAuth: `npx wrangler login`
+   - API token: `set CLOUDFLARE_API_TOKEN=<token>`
+3. В папке `proxy/` уже есть готовый `wrangler.toml`.
+4. Опционально задайте токен прокси:
    ```bash
-   wrangler login
+   npx wrangler secret put PROXY_TOKEN
    ```
-3. В папке `proxy/` создайте `wrangler.toml` и укажите `main = "worker.js"`.
-4. Добавьте secrets/env.
 5. Деплой:
    ```bash
-   wrangler deploy
+   npx wrangler deploy
    ```
 
 ## Проверка

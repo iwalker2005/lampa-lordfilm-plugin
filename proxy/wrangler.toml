@@ -1,0 +1,9 @@
+name = "lordfilm-proxy-iwalker2005"
+main = "worker.js"
+compatibility_date = "2026-02-26"
+workers_dev = true
+
+[vars]
+ALLOWED_HOSTS = "lordfilm-2026.org,www.lordfilm-2026.org,plapi.cdnvideohub.com,player.cdnvideohub.com,api.rstprgapipt.com,*.okcdn.ru,*.allarknow.online,*.stloadi.live"
+VIDEO_ALLOWED_HOSTS = "*.okcdn.ru,plapi.cdnvideohub.com,player.cdnvideohub.com"
+UPSTREAM_TIMEOUT_MS = "12000"
