@@ -56,6 +56,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\sync-plugin.ps1 -CheckOnly
 - `lordfilm_proxy_url`
 - `lordfilm_proxy_token`
 - `lordfilm_base_url` (по умолчанию `https://lordfilm-2026.org`)
+- `lordfilm_extra_bases` (опционально: список зеркал через запятую/пробел/перенос строки)
 
 По умолчанию уже прописан рабочий Cloudflare Worker:
 - `lordfilm_proxy_url = https://lordfilm-proxy-iwalker2005.ivonin38.workers.dev`
@@ -67,6 +68,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\sync-plugin.ps1 -CheckOnly
 Lampa.Storage.set('lordfilm_proxy_url', 'https://<your-worker>.workers.dev');
 Lampa.Storage.set('lordfilm_proxy_token', '<YOUR_SECRET_TOKEN>');
 Lampa.Storage.set('lordfilm_base_url', 'https://lordfilm-2026.org');
+Lampa.Storage.set('lordfilm_extra_bases', 'https://lordfilmpuq.study https://dzheison-stejtem-lordfilm.ru');
 ```
 
 ## Локальные данные
@@ -90,6 +92,16 @@ Lampa.Storage.set('lordfilm_base_url', 'https://lordfilm-2026.org');
 - Если `lordfilm_proxy_url` не задан, на части устройств работа может быть нестабильной из-за CORS.
 
 ## Changelog
+### 1.1.3
+- ускорен матчинг: быстрый проход по ограниченному набору баз, ранний direct-probe и более легкие timeout на первых шагах
+- расширен парсинг карточек под разные шаблоны (`articles__item`, универсальные `/film/*` и slug-ссылки), чтобы находились страницы на нестандартных зеркалах
+- добавлен ключ `lordfilm_extra_bases` для явного подключения нескольких доменов без перепрошивки плагина
+
+### 1.1.2
+- добавлена поддержка доменов вида `*-lordfilm.ru` (генерация кандидатов по названию фильма)
+- для таких доменов добавлен fallback прямого пробинга страницы с плеером, если поиск не отдал карточки
+- расширен proxy whitelist (`*.lordfilm.ru`) для запросов через Worker
+
 ### 1.1.1
 - ускорен поиск карточки: меньше последовательных запросов, параллельный поиск по базам и ранний выход при уверенном совпадении
 - повышена стабильность первого входа: встроенный повтор матчинга без выхода из карточки при временных сбоях/промахах поиска

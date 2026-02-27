@@ -1,4 +1,4 @@
-const VERSION = '1.0.6';
+const VERSION = '1.0.7';
 
 const PLUGIN_SOURCE_URL = 'https://raw.githubusercontent.com/iwalker2005/lampa-lordfilm-plugin/main/lordfilm.js';
 
@@ -7,6 +7,7 @@ const DEFAULT_ALLOWED_HOSTS = [
   'www.lordfilm-2026.org',
   'spongebob-squarepants-lordfilms.ru',
   'www.spongebob-squarepants-lordfilms.ru',
+  '*.lordfilm.ru',
   'plapi.cdnvideohub.com',
   'player.cdnvideohub.com',
   'api.namy.ws',

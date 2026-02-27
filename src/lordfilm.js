@@ -3,19 +3,20 @@
 if(window.lordfilm_plugin_ready) return;
 window.lordfilm_plugin_ready = true;
 
-var VERSION = '1.1.1';
+var VERSION = '1.1.3';
 var CACHE_VERSION = 2;
 var STORAGE = {
   favorites:'lordfilm_favorites',
   progress:'lordfilm_progress',
   lastChoice:'lordfilm_last_choice',
   baseUrl:'lordfilm_base_url',
+  extraBases:'lordfilm_extra_bases',
   proxyUrl:'lordfilm_proxy_url',
   proxyToken:'lordfilm_proxy_token',
   matchCache:'lordfilm_match_cache'
 };
 var DEFAULTS = {baseUrl:'https://lordfilm-2026.org', proxyUrl:'https://lordfilm-proxy-iwalker2005.ivonin38.workers.dev', proxyToken:'', timeout:15000, useStreamProxy:true};
-var FALLBACK_BASE_URLS = ['https://spongebob-squarepants-lordfilms.ru'];
+var FALLBACK_BASE_URLS = ['https://spongebob-squarepants-lordfilms.ru','https://lordfilmpuq.study'];
 var CONTEXT_BTN_CLASS = 'lordfilm-start-btn';
 var watchers = {interval:null, entry:null};
 
@@ -36,10 +37,34 @@ function year(v){ var m=String(v||'').match(/(19|20)\d{2}/); return m?parseInt(m
 function abs(base,u){ try{return new URL(u,base).toString();}catch(e){return u||'';} }
 function htmlDecode(v){ var a=document.createElement('textarea'); a.innerHTML=String(v||''); return a.value; }
 function unescUrl(v){ return String(v||'').replace(/\\u0026/gi,'&').replace(/&amp;/g,'&').replace(/\\\//g,'/').trim(); }
+function normalizeBaseUrl(v){
+  var raw=String(v||'').trim();
+  if(!raw) return '';
+  if(!/^https?:\/\//i.test(raw)) raw='https://'+raw;
+  try{
+    var u=new URL(raw);
+    return (u.origin||raw).replace(/\/+$/,'');
+  }catch(e){
+    return '';
+  }
+}
+function parseBaseList(raw){
+  var src='';
+  if(Array.isArray(raw)) src=raw.join('\n');
+  else src=String(raw||'');
+  var seen={}, out=[];
+  src.split(/[\s,;\n\r]+/).forEach(function(part){
+    var base=normalizeBaseUrl(part);
+    if(!base||seen[base]) return;
+    seen[base]=1;
+    out.push(base);
+  });
+  return out.slice(0,12);
+}
 function isWpBase(base){
   try{
     var h=(new URL(base)).hostname.toLowerCase();
-    return h.indexOf('lordfilms.ru')>=0;
+    return h.indexOf('lordfilms.ru')>=0 || /(^|\.)[^.]+-lordfilm\.ru$/.test(h);
   }catch(e){ return false; }
 }
 function searchUrl(base,query){
@@ -47,13 +72,88 @@ function searchUrl(base,query){
     ? (base+'/?s='+encodeURIComponent(query))
     : (base+'/index.php?do=search&subaction=search&story='+encodeURIComponent(query));
 }
-function baseCandidates(primary){
-  var out=[String(primary||'').trim().replace(/\/+$/,'')], seen={};
+function translitForDomain(raw){
+  var map={
+    'а':'a','б':'b','в':'v','г':'g','д':'d','е':'e','ё':'e','ж':'zh','з':'z','и':'i','й':'y','і':'i',
+    'к':'k','л':'l','м':'m','н':'n','о':'o','п':'p','р':'r','с':'s','т':'t','у':'u','ф':'f','х':'h',
+    'ц':'c','ч':'ch','ш':'sh','щ':'sch','ъ':'','ы':'y','ь':'','э':'e','ю':'yu','я':'ya'
+  };
+  var s=clean(raw||'').toLowerCase();
+  var out='';
+  for(var i=0;i<s.length;i++){
+    var ch=s.charAt(i);
+    if(map.hasOwnProperty(ch)){ out+=map[ch]; continue; }
+    if(/[a-z0-9]/.test(ch)){ out+=ch; continue; }
+    out+=' ';
+  }
+  return out.replace(/\s+/g,' ').trim();
+}
+function slugVariants(raw){
+  var base=translitForDomain(raw).replace(/[^a-z0-9\s-]/g,' ').replace(/\s+/g,' ').trim();
+  if(!base) return [];
+  var vars=[base];
+  vars.push(base.replace(/ey/g,'ei').replace(/iy/g,'ii'));
+  vars.push(base.replace(/yo/g,'io').replace(/ya/g,'ia').replace(/yu/g,'iu'));
+  var seen={}, out=[];
+  vars.forEach(function(v){
+    v=v.replace(/\s+/g,'-').replace(/-+/g,'-').replace(/^-+|-+$/g,'');
+    if(!v||v.length<3||seen[v]) return;
+    seen[v]=1;
+    out.push(v);
+  });
+  return out.slice(0,3);
+}
+function microDomainCandidates(meta){
+  var out=[], seen={};
+  function extractPeople(raw){
+    if(Array.isArray(raw)) return raw.map(function(v){
+      if(typeof v==='string') return v;
+      if(v&&typeof v==='object') return v.name||v.title||v.original_name||v.original_title||'';
+      return '';
+    });
+    if(typeof raw==='string') return raw.split(/[;,]/).map(function(v){ return clean(v); });
+    return [];
+  }
+  var seeds=[
+    meta&&meta.original_title,
+    meta&&meta.title,
+    meta&&meta.original_name
+  ];
+  var movie=meta&&meta.movie?meta.movie:{};
+  ['actors','cast','persons','stars'].forEach(function(k){
+    extractPeople(movie&&movie[k]).slice(0,4).forEach(function(v){ seeds.push(v); });
+  });
+  function add(raw){
+    slugVariants(raw).forEach(function(slug){
+      var parts=slug.split('-').filter(function(x){ return x&&x.length<24; }).slice(0,6);
+      var local=parts.join('-');
+      if(!local) return;
+      var base='https://'+local+'-lordfilm.ru';
+      if(seen[base]) return;
+      seen[base]=1;
+      out.push(base);
+    });
+  }
+  seeds.forEach(add);
+  return out.slice(0,10);
+}
+function baseCandidates(primary,meta,extraBases){
+  var out=[normalizeBaseUrl(primary)], seen={};
   FALLBACK_BASE_URLS.forEach(function(x){ if(x) out.push(String(x).trim().replace(/\/+$/,'')); });
-  return out.filter(function(x){ if(!x||seen[x]) return false; seen[x]=1; return true; });
+  (extraBases||[]).forEach(function(x){ if(x) out.push(String(x).trim().replace(/\/+$/,'')); });
+  microDomainCandidates(meta).forEach(function(x){ if(x) out.push(String(x).trim().replace(/\/+$/,'')); });
+  return out.filter(function(x){ if(!x||seen[x]) return false; seen[x]=1; return true; }).slice(0,12);
 }
 function conf(){ return {
-  baseUrl:String(sget(STORAGE.baseUrl,DEFAULTS.baseUrl)||DEFAULTS.baseUrl).trim().replace(/\/+$/,''),
+  baseUrl:(function(){
+    var list=parseBaseList(sget(STORAGE.baseUrl,DEFAULTS.baseUrl)||DEFAULTS.baseUrl);
+    return list[0]||normalizeBaseUrl(DEFAULTS.baseUrl);
+  })(),
+  extraBases:(function(){
+    var fromBase=parseBaseList(sget(STORAGE.baseUrl,DEFAULTS.baseUrl)||DEFAULTS.baseUrl).slice(1);
+    var fromExtra=parseBaseList(sget(STORAGE.extraBases,''));
+    return fromBase.concat(fromExtra).slice(0,12);
+  })(),
   proxyUrl:String(sget(STORAGE.proxyUrl,DEFAULTS.proxyUrl)||DEFAULTS.proxyUrl).trim().replace(/\/+$/,''),
   proxyToken:String(sget(STORAGE.proxyToken,DEFAULTS.proxyToken)||DEFAULTS.proxyToken).trim(),
   timeout:DEFAULTS.timeout,
@@ -134,20 +234,47 @@ function errMsg(err){ var s=err&&err.status?err.status:0; if(s===401||s===403) r
 function parseSearch(html,baseUrl){
   var doc=new DOMParser().parseFromString(html,'text/html');
   var out=[];
+  var baseHost='';
+  try{ baseHost=(new URL(baseUrl)).hostname.toLowerCase(); }catch(e){}
+  function sameHost(href){
+    try{
+      if(!baseHost) return true;
+      var h=(new URL(href,baseUrl)).hostname.toLowerCase();
+      return h===baseHost;
+    }catch(e){ return true; }
+  }
+  function pushCandidate(raw){
+    if(!raw||!raw.href) return;
+    if(!sameHost(raw.href)) return;
+    out.push({
+      title:clean(raw.title||''),
+      year:parseInt(raw.year||0,10)||0,
+      href:abs(baseUrl,raw.href||''),
+      poster:raw.poster?abs(baseUrl,b64src(raw.poster)):''
+    });
+  }
+  function titleFromHref(href){
+    try{
+      var p=(new URL(href,baseUrl)).pathname.split('/').filter(Boolean).pop()||'';
+      p=decodeURIComponent(p).replace(/\.[a-z0-9]{1,6}$/i,'');
+      p=p.replace(/^\d+-/,'').replace(/-(film|serial|multserial|multfilm|vse|chasti)$/ig,'').replace(/[-_]/g,' ');
+      return clean(p);
+    }catch(e){ return ''; }
+  }
 
   // DLE карточки.
   doc.querySelectorAll('.grid-items__item').forEach(function(n){
     var a=n.querySelector('a.item__title');
     if(!a) return;
-    var title=clean(a.textContent||'');
+    var title=clean(a.textContent||a.getAttribute('title')||'');
     if(!title) return;
     var img=n.querySelector('img');
     var src=img? (img.getAttribute('src')||img.getAttribute('data-src')||'') :'';
-    out.push({
+    pushCandidate({
       title:title,
       year:year((n.querySelector('.item__year')||{}).textContent||''),
-      href:abs(baseUrl,a.getAttribute('href')||''),
-      poster:src?abs(baseUrl,b64src(src)):''
+      href:a.getAttribute('href')||'',
+      poster:src||''
     });
   });
 
@@ -162,18 +289,112 @@ function parseSearch(html,baseUrl){
     if(/^data:image\/svg\+xml/i.test(src) && img){
       src=img.getAttribute('data-src')||img.getAttribute('data-lazy-src')||'';
     }
-    out.push({
+    pushCandidate({
       title:htmlDecode(title),
       year:year(ytxt),
-      href:abs(baseUrl,a.getAttribute('href')||''),
-      poster:src?abs(baseUrl,b64src(src)):''
+      href:a.getAttribute('href')||'',
+      poster:src||''
+    });
+  });
+
+  // Шаблон seonika (articles grid / carousel).
+  doc.querySelectorAll('a.articles__item[href],a.articles__info-button[href]').forEach(function(a){
+    var t=clean((a.querySelector('.articles__title')||{}).textContent||a.getAttribute('title')||a.textContent||'');
+    if(!t) t=titleFromHref(a.getAttribute('href')||'');
+    t=t.replace(/\b(смотреть|онлайн|lordfilm)\b/ig,'').replace(/\s+/g,' ').trim();
+    if(!t || t.length<2) return;
+    var img=a.querySelector('img')||((a.parentElement||{}).querySelector? a.parentElement.querySelector('img'):null);
+    var src=img?(img.getAttribute('data-src')||img.getAttribute('data-lazy-src')||img.getAttribute('src')||''):'';
+    pushCandidate({
+      title:t,
+      year:year(t),
+      href:a.getAttribute('href')||'',
+      poster:src||''
+    });
+  });
+
+  // Универсальный fallback для шаблонов с ссылками /film/* и slug-страницами.
+  doc.querySelectorAll('a[href*="/film/"],a[href*="-film.html"],a[href*="-serial"],a[href*="-multfilm"],a[href*="-multserial"]').forEach(function(a){
+    var href=a.getAttribute('href')||'';
+    var hrefLow=String(href).toLowerCase();
+    if(!href || hrefLow.indexOf('/genre/')>=0 || hrefLow.indexOf('/tag/')>=0 || hrefLow.indexOf('/category/')>=0) return;
+    var t=clean(a.getAttribute('title')||a.textContent||'');
+    if(!t) t=titleFromHref(href);
+    t=t.replace(/\b(смотреть|онлайн|бесплатно|hd|fullhd|lordfilm)\b/ig,'').replace(/\s+/g,' ').trim();
+    if(!t || t.length<2) return;
+    var img=a.querySelector('img');
+    var src=img?(img.getAttribute('data-src')||img.getAttribute('data-lazy-src')||img.getAttribute('src')||''):'';
+    pushCandidate({
+      title:t,
+      year:year(t+' '+href),
+      href:href,
+      poster:src||''
     });
   });
 
   var bodyText=(doc.body?doc.body.textContent||'':'').toLowerCase();
-  if(!out.length && (bodyText.indexOf('новостей по данному запросу не найдено')>=0 || bodyText.indexOf('ничего не найдено')>=0)) return [];
+  if(!out.length && (bodyText.indexOf('новостей по данному запросу не найдено')>=0 || bodyText.indexOf('ничего не найдено')>=0 || bodyText.indexOf('nothing found')>=0)) return [];
   var seen={};
-  return out.filter(function(x){ if(!x.href||seen[x.href]) return false; seen[x.href]=1; return true; });
+  return out.filter(function(x){ if(!x.href||!x.title||seen[x.href]) return false; seen[x.href]=1; return true; }).slice(0,240);
+}
+function parseDirectPageCandidate(html,baseUrl,pageUrl){
+  var doc=new DOMParser().parseFromString(html,'text/html');
+  var hasPlayer=!!doc.querySelector('video-player,iframe[src],iframe[data-src],iframe[data-lazy-src]');
+  if(!hasPlayer) return null;
+  var t1=clean((doc.querySelector('h1')||{}).textContent||'');
+  var og=doc.querySelector('meta[property="og:title"]');
+  var t2=clean(og&&og.getAttribute?og.getAttribute('content')||'':'');
+  var title=t1||t2||clean((doc.title||'').replace(/\s*(смотреть|онлайн).*/i,''));
+  if(!title) return null;
+  var y=year((doc.title||'')+' '+(clean((doc.body||{}).textContent||'').slice(0,500)));
+  var img=doc.querySelector('meta[property="og:image"],.page__poster img,.item__img img');
+  var poster='';
+  try{
+    if(img){
+      poster=abs(baseUrl,img.getAttribute('content')||img.getAttribute('data-src')||img.getAttribute('src')||'');
+    }
+  }catch(e){}
+  return {title:title,year:y,href:pageUrl,poster:poster,baseUrl:baseUrl};
+}
+function directPathCandidates(meta){
+  var seen={}, out=[];
+  function add(path){
+    var p=String(path||'').trim();
+    if(!p || seen[p]) return;
+    seen[p]=1;
+    out.push(p);
+  }
+  var slugs=[];
+  [meta&&meta.title,meta&&meta.original_title,meta&&meta.original_name].forEach(function(v){
+    slugVariants(v).forEach(function(s){
+      if(slugs.indexOf(s)<0) slugs.push(s);
+    });
+  });
+  var y=meta&&meta.year?parseInt(meta.year,10):0;
+  slugs.slice(0,4).forEach(function(slug){
+    add('/film/'+slug+'/');
+    if(y) add('/film/'+slug+'-'+y+'/');
+    add('/'+slug+'-film.html');
+    if(y) add('/'+slug+'-'+y+'-film.html');
+    add('/'+slug+'-serial.html');
+    add('/'+slug+'-multfilm.html');
+  });
+  add('/');
+  return out.slice(0,12);
+}
+async function probeDirectBase(base,meta,opt){
+  opt=opt||{};
+  var timeout=parseInt(opt.timeout||5200,10)||5200;
+  var root=String(base||'').replace(/\/+$/,'');
+  var urls=directPathCandidates(meta).map(function(p){ return root+p; });
+  var tasks=urls.map(function(url){
+    return requestPreferProxy(url,{type:'text',timeout:timeout,retries:0}).then(function(html){
+      var c=parseDirectPageCandidate(html,base,url);
+      return c||null;
+    }).catch(function(){ return null; });
+  });
+  var got=await Promise.all(tasks);
+  return got.filter(Boolean);
 }
 function queryVariants(meta){
   var out=[], seen={};
@@ -201,14 +422,14 @@ async function browseCandidates(base,opt){
   opt=opt||{};
   var paths=Array.isArray(opt.paths)&&opt.paths.length?opt.paths:['/filmy/','/serialy/','/'];
   var timeout=parseInt(opt.timeout||7000,10)||7000;
-  var out=[];
-  for(var i=0;i<paths.length;i++){
-    try{
-      var html=await requestPreferProxy(base+paths[i],{type:'text',timeout:timeout,retries:0});
+  var out=[], tasks=paths.map(function(path){
+    return requestPreferProxy(base+path,{type:'text',timeout:timeout,retries:0}).then(function(html){
       var f=parseSearch(html,base);
       f.forEach(function(x){ x.baseUrl=base; out.push(x); });
-    }catch(e){}
-  }
+      return true;
+    }).catch(function(){ return false; });
+  });
+  await Promise.all(tasks);
   return out;
 }
 
@@ -510,7 +731,7 @@ function uniqCandidates(list){
   return out;
 }
 function rankCandidates(meta,list){
-  return uniqCandidates(list).map(function(c){ return {candidate:c,score:score(meta,c)}; }).sort(function(a,b){ return b.score.total-a.score.total; });
+  return uniqCandidates(list).slice(0,260).map(function(c){ return {candidate:c,score:score(meta,c)}; }).sort(function(a,b){ return b.score.total-a.score.total; });
 }
 function isStrongMatch(meta,best){
   if(!best||!best.score) return false;
@@ -548,34 +769,47 @@ async function resolveMatch(meta,opt){
   }
 
   var queries=queryVariants(meta);
-  var bases=baseCandidates(cf.baseUrl);
+  var bases=baseCandidates(cf.baseUrl,meta,cf.extraBases);
+  var fastBases=bases.slice(0,Math.min(4,bases.length));
+  var deepBases=bases.slice(0,Math.min(8,bases.length));
   var cand=[];
 
   if(queries.length){
-    cand=cand.concat(await searchByQuery(queries[0],bases.slice(0,1),{timeout:5500}));
+    cand=cand.concat(await searchByQuery(queries[0],fastBases,{timeout:4300}));
   }
 
   var ranked=rankCandidates(meta,cand);
   var best=ranked[0]||null;
 
+  if(!cand.length){
+    var probeFast=await Promise.all(fastBases.slice(0,3).map(function(base){
+      return probeDirectBase(base,meta,{timeout:4300}).catch(function(){ return []; });
+    }));
+    probeFast.forEach(function(set){ if(set&&set.length) cand=cand.concat(set); });
+    ranked=rankCandidates(meta,cand);
+    best=ranked[0]||null;
+  }
+
   var qlimit=Math.min(queries.length,8);
   for(var i=1;i<qlimit && !isStrongMatch(meta,best);i++){
-    cand=cand.concat(await searchByQuery(queries[i],bases,{timeout:7000}));
+    var qbases=(i<3?fastBases:deepBases);
+    var qtimeout=(i<3?5200:6400);
+    cand=cand.concat(await searchByQuery(queries[i],qbases,{timeout:qtimeout}));
     ranked=rankCandidates(meta,cand);
     best=ranked[0]||null;
   }
 
   if(!cand.length){
-    try{
-      cand=cand.concat(await browseCandidates(bases[0],{timeout:6500}));
-    }catch(e){}
+    var browseSets=await Promise.all(deepBases.slice(0,4).map(function(base,idx){
+      var paths=(idx===0?['/','/filmy/','/serialy/','/multfilmy/']:['/filmy/','/serialy/','/']);
+      return browseCandidates(base,{timeout:5600,paths:paths}).catch(function(){ return []; });
+    }));
+    browseSets.forEach(function(set){ if(set&&set.length) cand=cand.concat(set); });
     if(!cand.length){
-      for(var z=1;z<bases.length;z++){
-        try{
-          var bset=await browseCandidates(bases[z],{timeout:6500,paths:['/filmy/','/serialy/']});
-          cand=cand.concat(bset);
-        }catch(e){}
-      }
+      var probeSets=await Promise.all(deepBases.slice(0,4).map(function(base){
+        return probeDirectBase(base,meta,{timeout:5200}).catch(function(){ return []; });
+      }));
+      probeSets.forEach(function(set){ if(set&&set.length) cand=cand.concat(set); });
     }
   }
 
@@ -590,7 +824,10 @@ async function resolveMatch(meta,opt){
       // fallback для карточек без валидного года на источнике
     }else if(ranked.length<4){
       try{
-        cand=cand.concat(await browseCandidates(bases[0],{timeout:7500,paths:['/','/filmy/','/serialy/','/filmy/multfilm/']}));
+        cand=cand.concat(await browseCandidates(bases[0],{timeout:6200,paths:['/','/filmy/','/serialy/','/filmy/multfilm/']}));
+      }catch(e){}
+      try{
+        cand=cand.concat(await probeDirectBase(bases[0],meta,{timeout:5400}));
       }catch(e){}
       ranked=rankCandidates(meta,cand);
       best=ranked[0]||null;
