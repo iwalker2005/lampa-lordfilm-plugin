@@ -13,6 +13,9 @@
 - `proxy/worker.js` — Cloudflare Worker прокси
 - `proxy/README.md` — деплой прокси
 - `docs/ТЗ_LordFilm_Lampa_v1.1.md` — ТЗ
+- `docs/ARCHITECTURE.md` — архитектура (полная версия)
+- `docs/LLM_CONTEXT.md` — краткая карта проекта для LLM (минимальный контекст)
+- `docs/SPEC.md` — entrypoint к требованиям без лишнего контекста
 
 ## Подключение в Lampa
 1. Используйте стабильную ссылку с корректным JS MIME:
