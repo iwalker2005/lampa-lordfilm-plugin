@@ -1,4 +1,4 @@
-const VERSION = '1.0.2';
+const VERSION = '1.0.3';
 
 const PLUGIN_SOURCE_URL = 'https://cdn.jsdelivr.net/gh/iwalker2005/lampa-lordfilm-plugin@main/lordfilm.js';
 
@@ -15,6 +15,7 @@ const DEFAULT_ALLOWED_HOSTS = [
 
 const DEFAULT_VIDEO_HOSTS = [
   '*.okcdn.ru',
+  '*.vkuser.net',
   'plapi.cdnvideohub.com',
   'player.cdnvideohub.com'
 ];
@@ -28,7 +29,11 @@ function hostAllowed(hostname, rules) {
   hostname = String(hostname || '').toLowerCase();
   return rules.some((rule) => {
     if (!rule) return false;
-    if (rule.startsWith('*.')) return hostname.endsWith(rule.slice(1));
+    if (rule.startsWith('*.')) {
+      const suffix = rule.slice(1);
+      const root = rule.slice(2);
+      return hostname === root || hostname.endsWith(suffix);
+    }
     return hostname === rule;
   });
 }

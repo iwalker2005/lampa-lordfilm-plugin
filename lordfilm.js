@@ -3,7 +3,7 @@
 if(window.lordfilm_plugin_ready) return;
 window.lordfilm_plugin_ready = true;
 
-var VERSION = '1.0.4';
+var VERSION = '1.0.6';
 var STORAGE = {
   favorites:'lordfilm_favorites',
   progress:'lordfilm_progress',
@@ -84,7 +84,17 @@ async function request(url,opt){ opt=opt||{}; var cf=conf(); var final=url, head
         var txt=await res.text(); try{return JSON.parse(txt);}catch(e){ throw new HttpError(500,'Invalid JSON',{body:txt}); }
       }
       var t=await res.text();
-      if(t&&t.charAt(0)==='{'){ try{ var w=JSON.parse(t); if(w&&typeof w.status==='number'&&typeof w.body!=='undefined'){ if(w.status>=400) throw new HttpError(w.status,w.error||'Proxy error',w); return String(w.body||''); } }catch(e){} }
+      if(t&&t.charAt(0)==='{'){
+        try{
+          var w=JSON.parse(t);
+          if(w&&typeof w.status==='number'&&typeof w.body!=='undefined'){
+            if(w.status>=400) throw new HttpError(w.status,w.error||'Proxy error',w);
+            return String(w.body||'');
+          }
+        }catch(e){
+          if(e&&e.name==='HttpError') throw e;
+        }
+      }
       return t;
     }catch(err){ if(timeoutErr(err)&&i===0) continue; throw err; }
   }
@@ -112,7 +122,7 @@ function parseSearch(html,baseUrl){
   return out.filter(function(x){ if(!x.href||seen[x.href]) return false; seen[x.href]=1; return true; });
 }
 
-function parsePlayerMeta(html,baseUrl){
+function parsePlayerMeta(html,baseUrl,itemUrl){
   var doc=new DOMParser().parseFromString(html,'text/html');
   var vp=doc.querySelector('video-player');
   var ifr=doc.querySelector('iframe[src*="balancer-api/iframe"]');
@@ -127,7 +137,9 @@ function parsePlayerMeta(html,baseUrl){
   }
   if(!publisherId) publisherId='2158';
   var bc=clean((doc.querySelector('.breadcrumbs')||{}).textContent||'').toLowerCase();
-  var isSerial=bc.indexOf('сериалы')>=0||html.indexOf('/serialy/')>=0;
+  var path='';
+  try{ path=new URL(itemUrl||'',baseUrl).pathname.toLowerCase(); }catch(e){}
+  var isSerial=bc.indexOf('сериалы')>=0||bc.indexOf('сериал')>=0||path.indexOf('/serialy/')>=0;
   return {titleId:titleId,publisherId:publisherId,aggregator:aggregator,isSerialByPage:isSerial};
 }
 
@@ -150,16 +162,27 @@ async function resolveMatch(meta){
     var html=await request(cf.baseUrl+'/index.php?do=search&subaction=search&story='+encodeURIComponent(queries[i]),{type:'text'});
     var f=parseSearch(html,cf.baseUrl);
     cand=cand.concat(f);
-    if(f.length) break;
   }
   if(!cand.length) throw new Error('Контент не найден на LordFilm');
+  var uniq=[], seen={};
+  cand.forEach(function(c){ if(!c||!c.href||seen[c.href]) return; seen[c.href]=1; uniq.push(c); });
+  cand=uniq;
 
-  var best=null;
-  cand.forEach(function(c){ var sc=score(meta,c); if(!best||sc.total>best.score.total) best={candidate:c,score:sc}; });
-  if(!best||best.score.total<70) throw new Error('Контент не найден на LordFilm');
+  var ranked=cand.map(function(c){ return {candidate:c,score:score(meta,c)}; }).sort(function(a,b){ return b.score.total-a.score.total; });
+  var best=ranked[0]||null;
+  if(!best) throw new Error('Контент не найден на LordFilm');
+
+  var minScore=(meta.year&&best.candidate.year)?70:54;
+  if(best.score.total<minScore){
+    if(ranked.length===1&&best.score.total>=50){
+      // fallback для карточек без валидного года на источнике
+    }else{
+      throw new Error('Контент не найден на LordFilm');
+    }
+  }
 
   var itemHtml=await request(best.candidate.href,{type:'text'});
-  var p=parsePlayerMeta(itemHtml,cf.baseUrl);
+  var p=parsePlayerMeta(itemHtml,cf.baseUrl,best.candidate.href);
   if(!p.titleId||!p.publisherId) throw new Error('Не удалось извлечь данные плеера');
 
   var resolved={
@@ -221,6 +244,7 @@ function qualityMap(src){
 function pickQuality(map,forced){
   if(!map) return {label:'',url:''};
   if(forced&&map[forced]) return {label:forced,url:map[forced]};
+  if(map['Auto HLS']) return {label:'Auto HLS',url:map['Auto HLS']};
   var def=String(sget('video_quality_default','1080')||'1080')+'p';
   var order=['2160p','1440p','1080p QHD','1080p','720p','480p','360p','240p','144p','Auto HLS','Auto DASH'];
   var idx=order.indexOf(def),i;
@@ -367,7 +391,8 @@ function component(object){
     try{
       st.resolved=await resolveMatch(meta);
       st.playlist=await loadPlaylist(st.resolved);
-      st.isSerial=!!st.playlist.isSerial||!!st.resolved.isSerialByPage||meta.type==='tv';
+      var playlistSerial=(st.playlist&&typeof st.playlist.isSerial==='boolean')?st.playlist.isSerial:null;
+      st.isSerial=playlistSerial===null?(!!st.resolved.isSerialByPage||meta.type==='tv'):(playlistSerial||meta.type==='tv');
       if(!st.playlist||!st.playlist.items||!st.playlist.items.length){ empty('Потоки не найдены'); return; }
       if(st.isSerial){
         var model=buildSerial(st.playlist.items,ckey(meta)); st.seasons=model.seasons; st.seasonList=model.seasonList; st.voices=model.voices;
@@ -474,6 +499,7 @@ function addButton(){
 }
 
 function init(){
+  if(window.lordfilm_plugin_inited) return;
   ensureAssets();
   Lampa.Component.add('lordfilm',component);
   Lampa.Manifest.plugins={
@@ -488,6 +514,7 @@ function init(){
     }
   };
   addButton();
+  window.lordfilm_plugin_inited=true;
   log('initialized',VERSION);
 }
 

@@ -22,7 +22,7 @@
 ```txt
 PROXY_TOKEN=very_secret_token
 ALLOWED_HOSTS=lordfilm-2026.org,plapi.cdnvideohub.com,player.cdnvideohub.com,*.okcdn.ru
-VIDEO_ALLOWED_HOSTS=*.okcdn.ru,plapi.cdnvideohub.com
+VIDEO_ALLOWED_HOSTS=*.okcdn.ru,*.vkuser.net,plapi.cdnvideohub.com
 UPSTREAM_TIMEOUT_MS=12000
 ```
 
