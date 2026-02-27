@@ -1,107 +1,90 @@
-# Архитектура и структура проекта LordFilm для Lampa
+﻿# Архитектура проекта LordFilm для Lampa
 
 ## 1. Назначение
-Проект реализует источник `LordFilm` для Lampa:
-- ищет контент по карточке фильма/сериала;
-- получает доступные потоки, озвучки, качества;
-- запускает воспроизведение через `Lampa.Player`;
-- сохраняет избранное и прогресс локально;
-- использует Cloudflare Worker как прокси для обхода CORS и унификации сетевого доступа.
+Проект состоит из двух частей:
+- Плагин Lampa (`src/lordfilm.js`), который ищет контент, подбирает источники и запускает плеер.
+- Cloudflare Worker прокси (`proxy/worker.js`), который решает сетевые ограничения (CORS, whitelist, stream proxy).
 
-## 2. Компоненты системы
+## 2. Компоненты
 
-### 2.1 Клиентский плагин (`lordfilm.js`)
-Зона ответственности:
-- интеграция в UI Lampa (кнопка/источник LordFilm);
-- матчинг карточки Lampa и результата источника;
-- загрузка плейлиста и потоков;
-- экран выбора серий/озвучек/качеств;
-- сохранение пользовательского состояния в `Lampa.Storage`.
+### 2.1 Плагин (`src/lordfilm.js`)
+Основные обязанности:
+- интеграция в UI Lampa (кнопка источника `LordFilm`);
+- матчинг карточки Lampa -> карточка на источнике;
+- парсинг нескольких типов сайтов:
+  - DLE-источник (`lordfilm-2026.org`),
+  - WP-источник (`spongebob-squarepants-lordfilms.ru`);
+- извлечение плеерных данных:
+  - `plapi` playlist/video,
+  - embed-потоки (`api.namy.ws` -> HLS/DASH);
+- выбор качества/озвучки/серий;
+- локальное сохранение избранного и прогресса.
 
-### 2.2 Прокси-слой (`proxy/worker.js`)
-Зона ответственности:
-- проксирование запросов к источнику и видеохостам;
-- CORS-заголовки для Lampa;
-- whitelist разрешенных доменов;
-- обработка `Range`-запросов для стриминга;
-- короткий endpoint плагина (`/p`), отдающий JS плагина.
+### 2.2 Release файл (`lordfilm.js`)
+- Это файл, который реально подключает Lampa (через CDN или `/p`).
+- Должен быть всегда синхронизирован с `src/lordfilm.js`.
 
-### 2.3 Конфигурация деплоя (`proxy/wrangler.toml`)
-Содержит:
-- имя Worker;
-- точку входа (`worker.js`);
-- переменные окружения (`ALLOWED_HOSTS`, `VIDEO_ALLOWED_HOSTS`, `UPSTREAM_TIMEOUT_MS`).
+### 2.3 Worker (`proxy/worker.js`)
+Эндпоинты:
+- `GET /health` - проверка доступности.
+- `GET /proxy?url=...` - прокси HTML/API-запросов.
+- `GET /stream?url=...` - прокси видеопотоков и m3u8 rewrite.
+- `GET /p` (и `/plugin`, `/plugin.js`, `/`) - отдача JS плагина.
+
+### 2.4 Конфиг деплоя (`proxy/wrangler.toml`)
+Критичные переменные:
+- `ALLOWED_HOSTS`
+- `VIDEO_ALLOWED_HOSTS`
+- `UPSTREAM_TIMEOUT_MS`
 
 ## 3. Структура репозитория
 
 ```text
 lampa-plugin/
-├── lordfilm.js
-├── README.md
-├── ТЗ_LordFilm_Lampa_v1.1.md
-├── docs/
-│   ├── ТЗ_LordFilm_Lampa_v1.1.md
-│   └── ARCHITECTURE.md
-└── proxy/
-    ├── worker.js
-    ├── wrangler.toml
-    └── README.md
+|-- AGENTS.md
+|-- README.md
+|-- lordfilm.js
+|-- src/
+|   `-- lordfilm.js
+|-- scripts/
+|   `-- sync-plugin.ps1
+|-- proxy/
+|   |-- worker.js
+|   |-- wrangler.toml
+|   `-- README.md
+`-- docs/
+    |-- LLM_CONTEXT.md
+    |-- SPEC.md
+    |-- ARCHITECTURE.md
+    `-- ТЗ_LordFilm_Lampa_v1.1.md
 ```
 
-## 4. Потоки данных
+## 4. Основной поток данных
+1. Пользователь открывает карточку в Lampa и выбирает `LordFilm`.
+2. Плагин формирует поисковые запросы (`title`, `original_title`, `original_name`).
+3. Плагин ищет кандидатов на источниках и ранжирует матч.
+4. После выбора карточки:
+   - либо загружается `plapi` playlist/video,
+   - либо извлекаются embed-потоки (`api.namy.ws`).
+5. Формируется quality map и запускается `Lampa.Player`.
+6. Прогресс/избранное сохраняются в `Lampa.Storage`.
 
-### 4.1 Подключение плагина
-1. Lampa загружает JS плагина по URL расширения.
-2. Плагин регистрирует компонент `lordfilm`.
-3. На карточке добавляется кнопка/точка входа в LordFilm.
+## 5. Технические правила изменений
+- Менять плагин только в `src/lordfilm.js`.
+- После правок запускать `scripts/sync-plugin.ps1`.
+- Проверки:
+  - `node --check src/lordfilm.js`
+  - `node --check lordfilm.js`
+  - `node --check proxy/worker.js` (если трогали прокси)
+- При изменениях `proxy/*` делать `npx wrangler deploy`.
 
-### 4.2 Поиск и матчинг контента
-1. Плагин берет данные карточки (`title`, `original_title`, `year`, IDs).
-2. Выполняет поиск на источнике через прокси.
-3. Считает score кандидатов и выбирает лучший матч.
-4. Из карточки источника извлекает `titleId/publisherId`.
+## 6. Типовые причины инцидентов
+- Источник поменял верстку/селекторы (`parseSearch`, `parsePlayerMeta`).
+- Источник сменил домен и не обновлён whitelist в Worker.
+- HLS манифест содержит относительные URI и не переписан.
+- Плагин и release-файл рассинхронизированы.
 
-### 4.3 Получение потоков и запуск
-1. Плагин запрашивает playlist API.
-2. Для выбранного эпизода/фильма запрашивает video API.
-3. Формирует карту качеств (HLS/DASH/MP4).
-4. Запускает `Lampa.Player` и плейлист.
-
-### 4.4 Состояние пользователя
-Хранится в `Lampa.Storage`:
-- `lordfilm_favorites`
-- `lordfilm_progress`
-- `lordfilm_last_choice`
-- `lordfilm_match_cache`
-- `lordfilm_proxy_url`
-- `lordfilm_proxy_token`
-- `lordfilm_base_url`
-
-## 5. HTTP-контракт Worker
-
-### `GET /health`
-Проверка доступности Worker.
-
-### `GET /proxy?url=<encoded>`
-Прокси для HTML/API-ответов источника.
-
-### `GET /stream?url=<encoded>`
-Прокси для видео (включая `Range` и `Content-Range`).
-
-### `GET /p` (также `/plugin`, `/plugin.js`, `/`)
-Отдает JS плагина напрямую с `200` и `Content-Type: application/javascript`.
-
-## 6. Конфигурация по умолчанию
-- `lordfilm_base_url`: `https://lordfilm-2026.org`
-- `lordfilm_proxy_url`: `https://lordfilm-proxy-iwalker2005.ivonin38.workers.dev`
-- `lordfilm_proxy_token`: пустой (не обязателен)
-
-## 7. Развертывание
-1. Код плагина хранится в GitHub-репозитории.
-2. Lampa подключает плагин по URL (`jsdelivr` или короткий Worker URL `/p`).
-3. Worker деплоится через Wrangler в Cloudflare и работает независимо от локального ПК.
-
-## 8. Ограничения и риски
-- Источник может менять DOM/контракт API, что требует обновления парсеров.
-- Возможны блокировки по сети/VPN и временная недоступность доменов.
-- Качество/наличие потоков зависит от внешних провайдеров.
+## 7. Production URL
+- Worker: `https://lordfilm-proxy-iwalker2005.ivonin38.workers.dev`
+- Plugin short URL: `https://lordfilm-proxy-iwalker2005.ivonin38.workers.dev/p`
+- Plugin CDN URL: `https://cdn.jsdelivr.net/gh/iwalker2005/lampa-lordfilm-plugin@main/lordfilm.js`

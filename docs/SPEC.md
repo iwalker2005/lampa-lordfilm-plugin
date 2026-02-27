@@ -1,10 +1,27 @@
-﻿# Spec Entry Point
+﻿# SPEC Entry Point (For New Chats)
 
-If you need full requirements, use this order:
-
-1. Start with `docs/ARCHITECTURE.md` for system overview.
-2. Open the full Russian spec file only for exact requirement wording:
+## Где требования
+1. Базовый обзор: `docs/ARCHITECTURE.md`
+2. Полный ТЗ (источник требований):
    - `docs/ТЗ_LordFilm_Lampa_v1.1.md`
-   - or root copy: `ТЗ_LordFilm_Lampa_v1.1.md`
+   - резервная копия: `ТЗ_LordFilm_Lampa_v1.1.md`
 
-Read targeted sections only to keep LLM context small.
+## Короткий стандарт выполнения задач
+1. Найти релевантный участок кода через `rg`.
+2. Внести правки в `src/lordfilm.js` (или `proxy/*` при сетевых проблемах).
+3. Синхронизировать `src/lordfilm.js -> lordfilm.js`.
+4. Прогнать `node --check` для изменённых JS-файлов.
+5. Если менялся `proxy/*`, сделать `npx wrangler deploy`.
+6. Зафиксировать изменения в git.
+
+## Что считать регрессией
+- Плагин перестал подключаться по `/p` или CDN URL.
+- Не работает поиск по карточке Lampa.
+- Не стартует playback после успешного матчинга.
+- Сломаны `избранное`/`прогресс`/`последний выбор`.
+
+## Минимальные артефакты в ответе
+- Какие файлы изменены.
+- Какие проверки выполнены.
+- Нужен ли деплой Worker.
+- Что пользователю сделать в Lampa (перезапуск/очистка кэша).

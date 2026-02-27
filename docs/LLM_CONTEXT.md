@@ -1,54 +1,49 @@
-﻿# LLM Context Guide (Minimal)
-
-## Goal
-Use this file to keep LLM context small and focused when working on this repo.
+﻿# LLM Context Guide (Actionable)
 
 ## Read Order
-1. `README.md`
-2. `docs/LLM_CONTEXT.md` (this file)
-3. Only then open one target file for the current task.
+1. `AGENTS.md`
+2. `README.md`
+3. Этот файл
+4. `docs/NEW_CHAT_CHECKLIST.md`
+5. Только целевые файлы по задаче
 
-## Project Map
-- `lordfilm.js`
-  - Main Lampa plugin logic.
-  - UI integration, search/match, playlist/stream selection, progress/favorites.
-- `proxy/worker.js`
-  - Cloudflare Worker proxy.
-  - Endpoints: `/health`, `/proxy`, `/stream`, `/p`.
-- `proxy/wrangler.toml`
-  - Worker deploy config and env vars.
-- `proxy/README.md`
-  - Worker deploy and runtime notes.
-- `docs/ARCHITECTURE.md`
-  - Full architecture document (long form).
-- `docs/SPEC.md`
-  - Short ASCII entrypoint to requirements.
+## Source Of Truth
+- Для плагина всегда редактировать `src/lordfilm.js`.
+- После правок синхронизировать в `lordfilm.js`:
+  - `powershell -ExecutionPolicy Bypass -File .\scripts\sync-plugin.ps1`
 
-## What To Open For Common Tasks
-- Plugin UI bug:
-  - Open `lordfilm.js` only.
-- Source/proxy/CORS bug:
-  - Open `proxy/worker.js` first, then `lordfilm.js` only if needed.
-- Deploy issue:
-  - Open `proxy/wrangler.toml` and `proxy/README.md`.
-- Requirements question:
-  - Open `docs/SPEC.md` first, then targeted sections only.
+## Target Files By Task
+- Не находит контент:
+  - `src/lordfilm.js` -> `parseSearch`, `resolveMatch`, `searchUrl`.
+- Контент найден, но плеер не стартует:
+  - `src/lordfilm.js` -> `parsePlayerMeta`, `parseEmbedSources`, `loadEmbedSources`.
+- `levelLoadError` / HLS проблемы:
+  - `src/lordfilm.js` -> `sproxy`, `qualityMap`.
+  - `proxy/worker.js` -> `rewriteM3u8Body`, `/stream`.
+- CORS/403/404:
+  - `proxy/worker.js`, `proxy/wrangler.toml`.
 
-## Context Budget Rules
-- Do not load all files at once.
-- Do not paste full large files into chat.
-- Read only relevant sections by search (`rg`) and line ranges.
-- Avoid reopening spec/docs unless task scope changes.
+## Minimal Check Commands
+```powershell
+node --check src\lordfilm.js
+node --check lordfilm.js
+node --check proxy\worker.js
+powershell -ExecutionPolicy Bypass -File .\scripts\sync-plugin.ps1 -CheckOnly
+```
 
-## Stable Inputs (Prefer)
-- Worker URL:
-  - `https://lordfilm-proxy-iwalker2005.ivonin38.workers.dev`
-- Short plugin URL:
-  - `https://lordfilm-proxy-iwalker2005.ivonin38.workers.dev/p`
-- Direct plugin CDN URL:
-  - `https://cdn.jsdelivr.net/gh/iwalker2005/lampa-lordfilm-plugin@main/lordfilm.js`
+## Deploy Commands
+- Только при изменениях в `proxy/*`:
+```powershell
+cd proxy
+npx wrangler deploy
+```
 
-## Non-Goals For Most Tasks
-- Editing full spec text.
-- Changing project structure.
-- Touching deploy config for UI-only fixes.
+## Stable URLs
+- Worker: `https://lordfilm-proxy-iwalker2005.ivonin38.workers.dev`
+- Plugin short URL: `https://lordfilm-proxy-iwalker2005.ivonin38.workers.dev/p`
+- Plugin CDN URL: `https://cdn.jsdelivr.net/gh/iwalker2005/lampa-lordfilm-plugin@main/lordfilm.js`
+
+## Context Rules
+- Не открывать весь репозиторий сразу.
+- Использовать `rg` и чтение точечных участков.
+- Документацию менять только если изменилась логика/процесс.

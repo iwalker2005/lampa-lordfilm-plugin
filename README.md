@@ -9,6 +9,7 @@
 - работа через прокси (`/proxy`, `/stream`)
 
 ## Структура
+- `AGENTS.md` — инструкция для новых LLM-чатов (что читать и как работать)
 - `src/lordfilm.js` — исходник плагина (source of truth)
 - `lordfilm.js` — release-файл для подключения в Lampa (синхронизируется из `src/`)
 - `proxy/worker.js` — Cloudflare Worker прокси
@@ -18,6 +19,14 @@
 - `docs/ARCHITECTURE.md` — архитектура (полная версия)
 - `docs/LLM_CONTEXT.md` — краткая карта проекта для LLM (минимальный контекст)
 - `docs/SPEC.md` — entrypoint к требованиям без лишнего контекста
+- `docs/NEW_CHAT_CHECKLIST.md` — быстрый чеклист для нового чата
+
+## Для новых LLM чатов
+Рекомендуемый порядок чтения:
+1. `AGENTS.md`
+2. `README.md`
+3. `docs/LLM_CONTEXT.md`
+4. Только после этого целевые файлы по задаче
 
 ## Локальная разработка
 1. Вносите изменения в `src/lordfilm.js`.
@@ -38,9 +47,9 @@ powershell -ExecutionPolicy Bypass -File .\scripts\sync-plugin.ps1 -CheckOnly
    - `https://cdn.jsdelivr.net/gh/iwalker2005/lampa-lordfilm-plugin@main/lordfilm.js`
    - короткая ссылка через Worker: `https://lordfilm-proxy-iwalker2005.ivonin38.workers.dev/p`
 2. Альтернатива (может блокироваться в части окружений): `raw.githubusercontent.com`.
-2. В Lampa откройте: `Настройки -> Расширения -> Добавить плагин -> URL`.
-3. Вставьте ссылку и подтвердите установку.
-4. Полностью перезапустите Lampa и заново откройте карточку фильма.
+3. В Lampa откройте: `Настройки -> Расширения -> Добавить плагин -> URL`.
+4. Вставьте ссылку и подтвердите установку.
+5. Полностью перезапустите Lampa и заново откройте карточку фильма.
 
 ## Обязательная настройка прокси
 Плагин использует ключи `Lampa.Storage`:
@@ -81,6 +90,15 @@ Lampa.Storage.set('lordfilm_base_url', 'https://lordfilm-2026.org');
 - Если `lordfilm_proxy_url` не задан, на части устройств работа может быть нестабильной из-за CORS.
 
 ## Changelog
+### 1.0.9
+- добавлена поддержка WP-поиска (`/?s=`) и fallback-зеркала
+- добавлен парсинг embed-плеера `api.namy.ws` (HLS/DASH)
+- расширен proxy whitelist для новых доменов
+- для `*.interkh.com` включён обход stream-proxy на стороне плагина
+
+### 1.0.8
+- подготовка fallback-базы и функций под WP-источники
+
 ### 1.0.7
 - фикс `levelLoadError` для HLS: Worker переписывает относительные URI внутри m3u8 в проксированные `/stream` ссылки
 
