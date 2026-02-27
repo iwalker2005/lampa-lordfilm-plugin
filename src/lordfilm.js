@@ -3,7 +3,7 @@
 if(window.lordfilm_plugin_ready) return;
 window.lordfilm_plugin_ready = true;
 
-var VERSION = '1.1.0';
+var VERSION = '1.1.1';
 var CACHE_VERSION = 2;
 var STORAGE = {
   favorites:'lordfilm_favorites',
@@ -99,7 +99,8 @@ async function request(url,opt){ opt=opt||{}; var cf=conf(); var final=url, head
     if(opt.proxyReferer) final+='&rf='+encodeURIComponent(String(opt.proxyReferer));
     if(cf.proxyToken) headers['X-Proxy-Token']=cf.proxyToken;
   }
-  for(var i=0;i<2;i++){
+  var retries=(typeof opt.retries==='number')?Math.max(0,parseInt(opt.retries,10)||0):1;
+  for(var i=0;i<=retries;i++){
     try{
       var res=await fetchTo(final,{method:opt.method||'GET',headers:headers,body:opt.body,timeout:opt.timeout||cf.timeout});
       if(opt.type==='json' && res.status===204) return {};
@@ -125,7 +126,7 @@ async function request(url,opt){ opt=opt||{}; var cf=conf(); var final=url, head
         }
       }
       return t;
-    }catch(err){ if((timeoutErr(err)||transientErr(err))&&i===0) continue; throw err; }
+    }catch(err){ if((timeoutErr(err)||transientErr(err))&&i<retries) continue; throw err; }
   }
   throw new HttpError(500,'Request failed');
 }
@@ -194,14 +195,16 @@ function queryVariants(meta){
     if(t.length>=2) add(t.slice(0,2).join(' '));
     if(t.length) add(t[0]);
   });
-  return out.slice(0,12);
+  return out.slice(0,8);
 }
-async function browseCandidates(base){
-  var paths=['/','/filmy/','/serialy/','/filmy/multfilm/'];
+async function browseCandidates(base,opt){
+  opt=opt||{};
+  var paths=Array.isArray(opt.paths)&&opt.paths.length?opt.paths:['/filmy/','/serialy/','/'];
+  var timeout=parseInt(opt.timeout||7000,10)||7000;
   var out=[];
   for(var i=0;i<paths.length;i++){
     try{
-      var html=await request(base+paths[i],{type:'text'});
+      var html=await requestPreferProxy(base+paths[i],{type:'text',timeout:timeout,retries:0});
       var f=parseSearch(html,base);
       f.forEach(function(x){ x.baseUrl=base; out.push(x); });
     }catch(e){}
@@ -302,7 +305,7 @@ function parsePlayerMeta(html,baseUrl,itemUrl){
 function cacheGet(key){
   var c=sobj(STORAGE.matchCache,{}), it=c[key];
   if(!it) return null;
-  if(!it.updated_at||now()-it.updated_at>86400*7) return null;
+  if(!it.updated_at||now()-it.updated_at>86400*14) return null;
   if(parseInt(it.cache_v||0,10)!==CACHE_VERSION) return null;
   return it;
 }
@@ -497,59 +500,99 @@ async function loadExtraPlaylists(resolved){
   return out;
 }
 
-async function resolveMatch(meta){
+function uniqCandidates(list){
+  var out=[], seen={};
+  (list||[]).forEach(function(c){
+    if(!c||!c.href||seen[c.href]) return;
+    seen[c.href]=1;
+    out.push(c);
+  });
+  return out;
+}
+function rankCandidates(meta,list){
+  return uniqCandidates(list).map(function(c){ return {candidate:c,score:score(meta,c)}; }).sort(function(a,b){ return b.score.total-a.score.total; });
+}
+function isStrongMatch(meta,best){
+  if(!best||!best.score) return false;
+  if(best.score.total>=86) return true;
+  if(best.score.name>=56 && best.score.year>=20) return true;
+  if(!meta.year && best.score.name>=57) return true;
+  return false;
+}
+async function searchByQuery(query,bases,opt){
+  opt=opt||{};
+  var timeout=parseInt(opt.timeout||7000,10)||7000;
+  var out=[];
+  var tasks=(bases||[]).map(function(base){
+    return requestPreferProxy(searchUrl(base,query),{type:'text',timeout:timeout,retries:0}).then(function(html){
+      var f=parseSearch(html,base);
+      f.forEach(function(x){ x.baseUrl=base; });
+      return f;
+    }).catch(function(e){
+      log('search failed',base,query,e&&e.message?e.message:e);
+      return [];
+    });
+  });
+  var sets=await Promise.all(tasks);
+  sets.forEach(function(set){ if(set&&set.length) out=out.concat(set); });
+  return out;
+}
+
+async function resolveMatch(meta,opt){
+  opt=opt||{};
   var cf=conf();
   var key=ckey(meta);
-  var cached=cacheGet(key);
-  if(cached&&cached.itemUrl&&((cached.titleId&&cached.publisherId)||cached.embedUrl)&&Array.isArray(cached.players)&&cached.players.length) return cached;
+  if(!opt.skipCache){
+    var cached=cacheGet(key);
+    if(cached&&cached.itemUrl&&((cached.titleId&&cached.publisherId)||cached.embedUrl)&&Array.isArray(cached.players)&&cached.players.length) return cached;
+  }
 
   var queries=queryVariants(meta);
-
   var bases=baseCandidates(cf.baseUrl);
   var cand=[];
-  for(var i=0;i<queries.length;i++){
-    for(var b=0;b<bases.length;b++){
-      try{
-        var html=await request(searchUrl(bases[b],queries[i]),{type:'text'});
-        var f=parseSearch(html,bases[b]);
-        f.forEach(function(x){ x.baseUrl=bases[b]; });
-        cand=cand.concat(f);
-      }catch(e){
-        log('search failed',bases[b],queries[i],e&&e.message?e.message:e);
+
+  if(queries.length){
+    cand=cand.concat(await searchByQuery(queries[0],bases.slice(0,1),{timeout:5500}));
+  }
+
+  var ranked=rankCandidates(meta,cand);
+  var best=ranked[0]||null;
+
+  var qlimit=Math.min(queries.length,8);
+  for(var i=1;i<qlimit && !isStrongMatch(meta,best);i++){
+    cand=cand.concat(await searchByQuery(queries[i],bases,{timeout:7000}));
+    ranked=rankCandidates(meta,cand);
+    best=ranked[0]||null;
+  }
+
+  if(!cand.length){
+    try{
+      cand=cand.concat(await browseCandidates(bases[0],{timeout:6500}));
+    }catch(e){}
+    if(!cand.length){
+      for(var z=1;z<bases.length;z++){
+        try{
+          var bset=await browseCandidates(bases[z],{timeout:6500,paths:['/filmy/','/serialy/']});
+          cand=cand.concat(bset);
+        }catch(e){}
       }
     }
   }
-  if(!cand.length){
-    for(var z=0;z<bases.length;z++){
-      try{
-        var bset=await browseCandidates(bases[z]);
-        cand=cand.concat(bset);
-      }catch(e){}
-    }
-  }
-  if(!cand.length) throw new Error('Контент не найден на LordFilm');
-  var uniq=[], seen={};
-  cand.forEach(function(c){ if(!c||!c.href||seen[c.href]) return; seen[c.href]=1; uniq.push(c); });
-  cand=uniq;
 
-  var ranked=cand.map(function(c){ return {candidate:c,score:score(meta,c)}; }).sort(function(a,b){ return b.score.total-a.score.total; });
-  var best=ranked[0]||null;
+  ranked=rankCandidates(meta,cand);
+  best=ranked[0]||null;
   if(!best) throw new Error('Контент не найден на LordFilm');
 
   var minScore=(meta.year&&best.candidate.year)?70:54;
+  if(opt.retry) minScore=Math.max(50,minScore-6);
   if(best.score.total<minScore){
     if(ranked.length===1&&best.score.total>=50){
       // fallback для карточек без валидного года на источнике
-    }else if(ranked.length<5){
-      for(var bx=0;bx<bases.length;bx++){
-        try{
-          var more=await browseCandidates(bases[bx]);
-          cand=cand.concat(more);
-        }catch(e){}
-      }
-      var seen2={}, uniq2=[];
-      cand.forEach(function(c){ if(!c||!c.href||seen2[c.href]) return; seen2[c.href]=1; uniq2.push(c); });
-      ranked=uniq2.map(function(c){ return {candidate:c,score:score(meta,c)}; }).sort(function(a,b){ return b.score.total-a.score.total; });
+    }else if(ranked.length<4){
+      try{
+        cand=cand.concat(await browseCandidates(bases[0],{timeout:7500,paths:['/','/filmy/','/serialy/','/filmy/multfilm/']}));
+      }catch(e){}
+      ranked=rankCandidates(meta,cand);
       best=ranked[0]||null;
       if(!best || best.score.total<minScore) throw new Error('Контент не найден на LordFilm');
     }else{
@@ -557,7 +600,7 @@ async function resolveMatch(meta){
     }
   }
 
-  var itemHtml=await request(best.candidate.href,{type:'text'});
+  var itemHtml=await requestPreferProxy(best.candidate.href,{type:'text',timeout:9000,retries:0});
   var parseBase=best.candidate.baseUrl||cf.baseUrl;
   try{ parseBase=(new URL(best.candidate.href)).origin||parseBase; }catch(e){}
   var p=parsePlayerMeta(itemHtml,parseBase,best.candidate.href);
@@ -590,10 +633,22 @@ async function loadVideo(vkId){ return await requestPreferProxy('https://plapi.c
 function voice(item){ var s=clean(item.voiceStudio||''), t=clean(item.voiceType||''); if(s&&t&&s!==t) return s+' / '+t; return s||t||'Оригинал'; }
 
 function buildMovieEntries(items,mkey){
-  return (items||[]).map(function(it,idx){
-    var v=voice(it), hash=hkey(['lordfilm',mkey,'movie',v.toLowerCase(),it.vkId||it.embedUrl||idx]);
+  var order=[], grouped={};
+  (items||[]).forEach(function(it,idx){
+    var v=voice(it), k=norm(v||('voice_'+idx));
+    if(!grouped[k]){
+      grouped[k]=it;
+      order.push(k);
+      return;
+    }
+    if(!grouped[k].vkId && it.vkId) grouped[k]=it;
+  });
+  return order.map(function(k,idx){
+    var it=grouped[k]||{};
+    var v=voice(it);
+    var hash=hkey(['lordfilm',mkey,'movie',k,it.vkId||it.embedUrl||idx]);
     return {
-      kind:'movie', vkId:it.vkId||'', embedUrl:it.embedUrl||'', sourceMap:it.sourceMap||null, voice:v, voiceKey:norm(v||('voice_'+idx)),
+      kind:'movie', vkId:it.vkId||'', embedUrl:it.embedUrl||'', sourceMap:it.sourceMap||null, voice:v, voiceKey:k,
       title:v, subtitle:'Выбор качества', hash:hash,
       timeline:(window.Lampa&&Lampa.Timeline)?Lampa.Timeline.view(hash):{time:0,duration:0,percent:0}
     };
@@ -782,12 +837,23 @@ function component(object){
       saveP(meta,{type:'tv',season:en.season,episode:en.episode,time:parseInt((en.timeline||{}).time||0,10),duration:parseInt((en.timeline||{}).duration||0,10),updated_at:now()}); startWatcher(meta,en,'tv',en.season,en.episode);
     } finally { loading(false);} }
   function playEntry(en){ if(st.loading) return; if(meta.movie&&meta.movie.id) Lampa.Favorite.add('history',meta.movie,100); if(en.kind==='movie') playMovie(en).catch(function(err){ notify(errMsg(err)); }); else playEpisode(en).catch(function(err){ notify(errMsg(err)); }); }
+  async function resolveMatchSafe(){
+    try{
+      return await resolveMatch(meta);
+    }catch(err){
+      var msg=String((err&&err.message)||'');
+      if(msg.indexOf('Контент не найден на LordFilm')>=0 || timeoutErr(err) || transientErr(err)){
+        return await resolveMatch(meta,{skipCache:true,retry:true});
+      }
+      throw err;
+    }
+  }
 
   async function bootstrap(){
     if(!meta.title&&!meta.original_title){ empty('В карточке отсутствует название'); return; }
     loading(true);
     try{
-      st.resolved=await resolveMatch(meta);
+      st.resolved=await resolveMatchSafe();
       var primaryErr=null;
       st.playlist={isSerial:false,items:[]};
       if(st.resolved.embedUrl){
