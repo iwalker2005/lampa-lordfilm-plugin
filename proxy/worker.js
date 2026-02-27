@@ -1,4 +1,4 @@
-const VERSION = '1.0.5';
+const VERSION = '1.0.6';
 
 const PLUGIN_SOURCE_URL = 'https://raw.githubusercontent.com/iwalker2005/lampa-lordfilm-plugin/main/lordfilm.js';
 
@@ -46,8 +46,8 @@ function hostAllowed(hostname, rules) {
 function corsHeaders(extra = {}) {
   return {
     'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET,HEAD,OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, X-Proxy-Token, Range',
+    'Access-Control-Allow-Methods': 'GET,HEAD,POST,OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, X-Proxy-Token, Range, X-Requested-With, Borth, DLE-API-TOKEN, Iframe-Request-Id, Authorization',
     'Access-Control-Expose-Headers': 'Content-Type, Content-Length, Content-Range, Accept-Ranges, Cache-Control, ETag',
     'Vary': 'Origin',
     ...extra
@@ -109,30 +109,71 @@ async function forwardRequest(request, targetUrl, {
   wrapJson = false,
   streamMode = false,
   proxyBase = '',
-  streamToken = ''
+  streamToken = '',
+  refererOverride = ''
 } = {}) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
-    const method = request.method === 'HEAD' ? 'HEAD' : 'GET';
+    const sourceMethod = String(request.method || 'GET').toUpperCase();
+    const method = streamMode
+      ? (sourceMethod === 'HEAD' ? 'HEAD' : 'GET')
+      : sourceMethod;
     const headers = new Headers();
 
-    const copy = ['user-agent', 'accept', 'accept-language', 'if-none-match', 'if-modified-since', 'range'];
+    const copy = [
+      'user-agent',
+      'accept',
+      'accept-language',
+      'if-none-match',
+      'if-modified-since',
+      'range',
+      'content-type',
+      'x-requested-with',
+      'borth',
+      'dle-api-token',
+      'iframe-request-id',
+      'authorization'
+    ];
     copy.forEach((h) => {
       const v = request.headers.get(h);
       if (v) headers.set(h, v);
     });
 
+    let rf = '';
+    if (refererOverride) {
+      try {
+        rf = new URL(refererOverride).toString();
+      } catch (e) {
+        rf = '';
+      }
+    }
+
     const forceOriginHeaders = !/^(?:.*\.)?api\.namy\.ws$/i.test(targetUrl.hostname);
-    if (forceOriginHeaders) {
+    if (rf) {
+      headers.set('Referer', rf);
+      if (forceOriginHeaders) {
+        try {
+          headers.set('Origin', new URL(rf).origin);
+        } catch (e) {
+          headers.set('Origin', targetUrl.origin);
+        }
+      }
+    } else if (forceOriginHeaders) {
       headers.set('Origin', targetUrl.origin);
       headers.set('Referer', targetUrl.origin + '/');
+    }
+
+    let body;
+    if (method !== 'GET' && method !== 'HEAD') {
+      body = await request.clone().arrayBuffer();
     }
 
     const upstream = await fetch(targetUrl.toString(), {
       method,
       headers,
+      body,
       redirect: 'follow',
       signal: controller.signal
     });
@@ -219,6 +260,9 @@ export default {
 
     if (url.pathname === '/proxy') {
       if (!authOk(request, url, env)) return json({ status: 403, error: 'Forbidden' }, 403);
+      if (!['GET', 'HEAD', 'POST'].includes(request.method)) {
+        return json({ status: 405, error: 'Method not allowed' }, 405);
+      }
 
       const raw = url.searchParams.get('url');
       if (!raw) return json({ status: 400, error: 'Missing `url` query param' }, 400);
@@ -234,8 +278,14 @@ export default {
       if (!hostAllowed(target.hostname, allowedHosts)) return json({ status: 403, error: 'Target host is not allowed' }, 403);
 
       const wrap = url.searchParams.get('wrap') === '1';
+      const refererOverride = url.searchParams.get('rf') || '';
       try {
-        return await forwardRequest(request, target, { timeoutMs, wrapJson: wrap, streamMode: false });
+        return await forwardRequest(request, target, {
+          timeoutMs,
+          wrapJson: wrap,
+          streamMode: false,
+          refererOverride
+        });
       } catch (e) {
         if (e.name === 'AbortError') return json({ status: 504, error: 'Upstream timeout' }, 504);
         return json({ status: 502, error: 'Upstream request failed' }, 502);
@@ -244,6 +294,9 @@ export default {
 
     if (url.pathname === '/stream') {
       if (!authOk(request, url, env)) return json({ status: 403, error: 'Forbidden' }, 403);
+      if (!['GET', 'HEAD'].includes(request.method)) {
+        return json({ status: 405, error: 'Method not allowed' }, 405);
+      }
 
       const raw = url.searchParams.get('url');
       if (!raw) return json({ status: 400, error: 'Missing `url` query param' }, 400);

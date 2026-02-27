@@ -90,6 +90,13 @@ Lampa.Storage.set('lordfilm_base_url', 'https://lordfilm-2026.org');
 - Если `lordfilm_proxy_url` не задан, на части устройств работа может быть нестабильной из-за CORS.
 
 ## Changelog
+### 1.1.0
+- поиск: добавлены дополнительные варианты запросов и fallback-обход разделов (`/`, `/filmy/`, `/serialy/`, `/filmy/multfilm/`) при пустой выдаче
+- матчинг: обновлён cache-формат (`cache_v=2`), старые неполные записи автоматически игнорируются
+- плееры: извлечение и объединение источников из всех обнаруженных `video-player` и `iframe` (включая `balancer`/`api.namy.ws`/доп. CDNVideoHub)
+- сеть: retry на transient-сбои, корректная обработка `204` для JSON, fallback proxy->direct
+- прокси Worker: поддержка `POST /proxy`, `rf` (`Referer` override) и проброс служебных заголовков (`Borth`, `X-Requested-With`, `DLE-API-TOKEN`, `Iframe-Request-Id`)
+
 ### 1.0.9
 - добавлена поддержка WP-поиска (`/?s=`) и fallback-зеркала
 - добавлен парсинг embed-плеера `api.namy.ws` (HLS/DASH)

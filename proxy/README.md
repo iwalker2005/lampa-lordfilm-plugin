@@ -2,11 +2,12 @@
 
 ## Что делает
 - `GET /health`
-- `GET /proxy?url=<encoded_target_url>`
+- `GET|HEAD|POST /proxy?url=<encoded_target_url>[&rf=<encoded_referer>]`
 - `GET /stream?url=<encoded_video_url>`
 
 Поддерживает:
 - `X-Proxy-Token` (или `token` query для `/stream`)
+- проброс заголовков `X-Requested-With`, `Borth`, `DLE-API-TOKEN`, `Iframe-Request-Id`
 - CORS для Lampa
 - whitelist хостов
 - проброс `Range`/`Content-Range` для стрима
