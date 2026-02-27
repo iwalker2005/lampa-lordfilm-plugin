@@ -1,4 +1,4 @@
-const VERSION = '1.0.3';
+const VERSION = '1.0.4';
 
 const PLUGIN_SOURCE_URL = 'https://raw.githubusercontent.com/iwalker2005/lampa-lordfilm-plugin/main/lordfilm.js';
 
@@ -56,6 +56,39 @@ function json(data, status = 200) {
   });
 }
 
+function toStreamUrl(proxyBase, target, token = '') {
+  const proxied = new URL('/stream', proxyBase);
+  proxied.searchParams.set('url', target.toString());
+  if (token) proxied.searchParams.set('token', token);
+  return proxied.toString();
+}
+
+function rewriteM3u8Body(body, sourceUrl, proxyBase, token = '') {
+  return String(body || '')
+    .split(/\r?\n/)
+    .map((line) => {
+      const trimmed = line.trim();
+      if (!trimmed) return line;
+
+      if (trimmed.startsWith('#')) {
+        let out = line.replace(/URI="([^"]+)"/g, (_, uri) => {
+          const absolute = new URL(uri, sourceUrl);
+          return `URI="${toStreamUrl(proxyBase, absolute, token)}"`;
+        });
+        out = out.replace(/URI='([^']+)'/g, (_, uri) => {
+          const absolute = new URL(uri, sourceUrl);
+          return `URI='${toStreamUrl(proxyBase, absolute, token)}'`;
+        });
+        return out;
+      }
+
+      if (/^[a-z][a-z0-9+.-]*:/i.test(trimmed) && !/^https?:/i.test(trimmed)) return line;
+      const absolute = new URL(trimmed, sourceUrl);
+      return toStreamUrl(proxyBase, absolute, token);
+    })
+    .join('\n');
+}
+
 function getToken(request, url) {
   return request.headers.get('X-Proxy-Token') || url.searchParams.get('token') || '';
 }
@@ -66,7 +99,13 @@ function authOk(request, url, env) {
   return getToken(request, url) === required;
 }
 
-async function forwardRequest(request, targetUrl, { timeoutMs = 12000, wrapJson = false, streamMode = false } = {}) {
+async function forwardRequest(request, targetUrl, {
+  timeoutMs = 12000,
+  wrapJson = false,
+  streamMode = false,
+  proxyBase = '',
+  streamToken = ''
+} = {}) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
@@ -110,6 +149,23 @@ async function forwardRequest(request, targetUrl, { timeoutMs = 12000, wrapJson 
     });
 
     Object.entries(corsHeaders()).forEach(([k, v]) => passHeaders.set(k, v));
+
+    const contentType = String(upstream.headers.get('content-type') || '').toLowerCase();
+    const isM3u8 = streamMode && (
+      contentType.includes('mpegurl') ||
+      contentType.includes('vnd.apple.mpegurl') ||
+      /\.m3u8(?:$|\?)/i.test(targetUrl.pathname + targetUrl.search)
+    );
+
+    if (isM3u8 && method !== 'HEAD') {
+      const manifest = await upstream.text();
+      const rewritten = rewriteM3u8Body(manifest, targetUrl, proxyBase || request.url, streamToken);
+      return new Response(rewritten, {
+        status: upstream.status,
+        statusText: upstream.statusText,
+        headers: passHeaders
+      });
+    }
 
     return new Response(upstream.body, {
       status: upstream.status,
@@ -194,8 +250,15 @@ export default {
       if (!/^https?:$/i.test(target.protocol)) return json({ status: 400, error: 'Only http/https URLs are allowed' }, 400);
       if (!hostAllowed(target.hostname, videoHosts)) return json({ status: 403, error: 'Video host is not allowed' }, 403);
 
+      const streamToken = url.searchParams.get('token') || '';
       try {
-        return await forwardRequest(request, target, { timeoutMs, wrapJson: false, streamMode: true });
+        return await forwardRequest(request, target, {
+          timeoutMs,
+          wrapJson: false,
+          streamMode: true,
+          proxyBase: url.origin,
+          streamToken
+        });
       } catch (e) {
         if (e.name === 'AbortError') return json({ status: 504, error: 'Upstream timeout' }, 504);
         return json({ status: 502, error: 'Stream proxy failed' }, 502);
