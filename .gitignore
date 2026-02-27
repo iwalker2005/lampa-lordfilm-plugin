@@ -1,0 +1,10 @@
+﻿# Ignore local Cloudflare/Wrangler state
+proxy/.wrangler/
+
+# Local env files
+.env
+.env.*
+
+# IDE
+.vscode/
+.idea/

@@ -9,13 +9,29 @@
 - работа через прокси (`/proxy`, `/stream`)
 
 ## Структура
-- `lordfilm.js` — основной плагин
+- `src/lordfilm.js` — исходник плагина (source of truth)
+- `lordfilm.js` — release-файл для подключения в Lampa (синхронизируется из `src/`)
 - `proxy/worker.js` — Cloudflare Worker прокси
 - `proxy/README.md` — деплой прокси
+- `scripts/sync-plugin.ps1` — синхронизация `src/lordfilm.js -> lordfilm.js`
 - `docs/ТЗ_LordFilm_Lampa_v1.1.md` — ТЗ
 - `docs/ARCHITECTURE.md` — архитектура (полная версия)
 - `docs/LLM_CONTEXT.md` — краткая карта проекта для LLM (минимальный контекст)
 - `docs/SPEC.md` — entrypoint к требованиям без лишнего контекста
+
+## Локальная разработка
+1. Вносите изменения в `src/lordfilm.js`.
+2. Синхронизируйте release-файл:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\sync-plugin.ps1
+```
+
+3. (Опционально) проверка синхронизации:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\sync-plugin.ps1 -CheckOnly
+```
 
 ## Подключение в Lampa
 1. Используйте стабильную ссылку с корректным JS MIME:
