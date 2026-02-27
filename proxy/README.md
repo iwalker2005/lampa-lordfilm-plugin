@@ -2,15 +2,19 @@
 
 ## Что делает
 - `GET /health`
-- `GET|HEAD|POST /proxy?url=<encoded_target_url>[&rf=<encoded_referer>]`
-- `GET /stream?url=<encoded_video_url>`
+- `GET|HEAD|POST /proxy?url=<encoded_target_url>[&rf=<encoded_referer>][&of=<encoded_origin>][&cookie=<encoded_cookie>]`
+- `GET|HEAD /stream?url=<encoded_video_url>[&rf=<encoded_referer>][&of=<encoded_origin>][&cookie=<encoded_cookie>]`
 
 Поддерживает:
 - `X-Proxy-Token` (или `token` query для `/stream`)
+- `X-Proxy-Cookie` / `cookie` query для cookie proxy
 - проброс заголовков `X-Requested-With`, `Borth`, `DLE-API-TOKEN`, `Iframe-Request-Id`
+- `Referer`/`Origin` override (`rf`/`of`)
 - CORS для Lampa
 - whitelist хостов
 - проброс `Range`/`Content-Range` для стрима
+- rewrite `.m3u8` (относительные сегменты проксируются через `/stream`)
+- проброс `Set-Cookie`
 
 ## Переменные окружения
 - `PROXY_TOKEN` — обязательный секрет (рекомендуется)

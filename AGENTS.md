@@ -9,18 +9,24 @@ Lampa plugin source `LordFilm` + Cloudflare Worker proxy.
 3. Open only target files for the current task.
 
 ## File Map
-- `src/lordfilm.js` - plugin source of truth.
-- `lordfilm.js` - release file used by Lampa/CDN.
+- `src/core/*.js` - shared helpers (`utils`, `network`, provider runner).
+- `src/providers/*.js` - provider modules (LordFilm, Collaps, Kodik, Alloha, etc.).
+- `src/index.js` - Lampa UI/component entrypoint.
+- `src/lordfilm.js` - bundled plugin output (generated).
+- `lordfilm.js` - release file used by Lampa/CDN (generated).
 - `proxy/worker.js` - Worker proxy (`/health`, `/proxy`, `/stream`, `/p`).
 - `proxy/wrangler.toml` - deploy config and host allowlists.
-- `scripts/sync-plugin.ps1` - sync `src/lordfilm.js -> lordfilm.js`.
+- `scripts/build-plugin.ps1` - build bundle from modular `src/*`.
+- `scripts/sync-plugin.ps1` - alias for build script (kept for compatibility).
 - `docs/` - context, architecture, spec.
 
 ## Required Workflow
-1. Edit plugin code only in `src/lordfilm.js`.
-2. Sync release file:
-   - `powershell -ExecutionPolicy Bypass -File .\scripts\sync-plugin.ps1`
+1. Edit plugin code in modular files under `src/core/*`, `src/providers/*`, `src/index.js`.
+2. Build bundled files:
+   - `powershell -ExecutionPolicy Bypass -File .\scripts\build-plugin.ps1`
+   - or compatibility alias: `powershell -ExecutionPolicy Bypass -File .\scripts\sync-plugin.ps1`
 3. Validate syntax:
+   - `node --check src/index.js`
    - `node --check src/lordfilm.js`
    - `node --check lordfilm.js`
    - if proxy touched: `node --check proxy/worker.js`
@@ -30,9 +36,9 @@ Lampa plugin source `LordFilm` + Cloudflare Worker proxy.
 5. Commit only related files and push.
 
 ## Fast Debug Map
-- "Content not found": `parseSearch`, `resolveMatch`, `searchUrl`, `FALLBACK_BASE_URLS`.
-- `levelLoadError`: `sproxy`, `qualityMap`, Worker `rewriteM3u8Body`, `VIDEO_ALLOWED_HOSTS`.
-- Content exists on site but does not start: `parsePlayerMeta`, `parseEmbedSources`, `loadEmbedSources`, `ALLOWED_HOSTS`.
+- "Content not found": `src/providers/lordfilm.js` (`resolveCandidate`, `searchByGroup`, `searchDuckDuckGo`), provider toggles in settings.
+- `levelLoadError`: Worker `rewriteM3u8Body`, stream proxy headers, `VIDEO_ALLOWED_HOSTS`.
+- Content exists on site but does not start: provider parser module for that source + Worker (`/proxy`, `/stream`) headers/cookies.
 - CORS/403/404: `proxy/worker.js` + `proxy/wrangler.toml`.
 
 ## Stable Production URLs

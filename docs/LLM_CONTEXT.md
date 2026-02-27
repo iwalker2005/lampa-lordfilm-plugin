@@ -1,30 +1,38 @@
-п»ї# LLM Context Guide (Actionable)
+# LLM Context Guide (Actionable)
 
 ## Read Order
 1. `AGENTS.md`
 2. `README.md`
-3. Р­С‚РѕС‚ С„Р°Р№Р»
+3. Этот файл
 4. `docs/NEW_CHAT_CHECKLIST.md`
-5. РўРѕР»СЊРєРѕ С†РµР»РµРІС‹Рµ С„Р°Р№Р»С‹ РїРѕ Р·Р°РґР°С‡Рµ
+5. Только целевые файлы по задаче
 
 ## Source Of Truth
-- Р”Р»СЏ РїР»Р°РіРёРЅР° РІСЃРµРіРґР° СЂРµРґР°РєС‚РёСЂРѕРІР°С‚СЊ `src/lordfilm.js`.
-- РџРѕСЃР»Рµ РїСЂР°РІРѕРє СЃРёРЅС…СЂРѕРЅРёР·РёСЂРѕРІР°С‚СЊ РІ `lordfilm.js`:
-  - `powershell -ExecutionPolicy Bypass -File .\scripts\sync-plugin.ps1`
+- Разработка ведется в модулях:
+  - `src/core/*`
+  - `src/providers/*`
+  - `src/index.js`
+- Bundle генерируется в:
+  - `src/lordfilm.js`
+  - `lordfilm.js`
+- Сборка:
+  - `powershell -ExecutionPolicy Bypass -File .\scripts\build-plugin.ps1`
 
 ## Target Files By Task
-- РќРµ РЅР°С…РѕРґРёС‚ РєРѕРЅС‚РµРЅС‚:
-  - `src/lordfilm.js` -> `parseSearch`, `resolveMatch`, `searchUrl`.
-- РљРѕРЅС‚РµРЅС‚ РЅР°Р№РґРµРЅ, РЅРѕ РїР»РµРµСЂ РЅРµ СЃС‚Р°СЂС‚СѓРµС‚:
-  - `src/lordfilm.js` -> `parsePlayerMeta`, `parseEmbedSources`, `loadEmbedSources`.
-- `levelLoadError` / HLS РїСЂРѕР±Р»РµРјС‹:
-  - `src/lordfilm.js` -> `sproxy`, `qualityMap`.
-  - `proxy/worker.js` -> `rewriteM3u8Body`, `/stream`.
+- Не находит контент:
+  - `src/providers/lordfilm.js` (`resolveCandidate`, `searchByGroup`, `searchDuckDuckGo`)
+  - `src/core/providers.js` (орchestrator + таймауты)
+- Контент найден, но плеер не стартует:
+  - соответствующий модуль в `src/providers/*.js`
+  - `src/index.js` (`resolveSourceMap`, `playEntry`)
+- `levelLoadError` / HLS проблемы:
+  - `proxy/worker.js` -> `rewriteM3u8Body`, `/stream`
 - CORS/403/404:
-  - `proxy/worker.js`, `proxy/wrangler.toml`.
+  - `proxy/worker.js`, `proxy/wrangler.toml`
 
 ## Minimal Check Commands
 ```powershell
+node --check src\index.js
 node --check src\lordfilm.js
 node --check lordfilm.js
 node --check proxy\worker.js
@@ -32,7 +40,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\sync-plugin.ps1 -CheckOnly
 ```
 
 ## Deploy Commands
-- РўРѕР»СЊРєРѕ РїСЂРё РёР·РјРµРЅРµРЅРёСЏС… РІ `proxy/*`:
+- Только при изменениях в `proxy/*`:
 ```powershell
 cd proxy
 npx wrangler deploy
@@ -44,6 +52,6 @@ npx wrangler deploy
 - Plugin CDN URL: `https://cdn.jsdelivr.net/gh/iwalker2005/lampa-lordfilm-plugin@main/lordfilm.js`
 
 ## Context Rules
-- РќРµ РѕС‚РєСЂС‹РІР°С‚СЊ РІРµСЃСЊ СЂРµРїРѕР·РёС‚РѕСЂРёР№ СЃСЂР°Р·Сѓ.
-- РСЃРїРѕР»СЊР·РѕРІР°С‚СЊ `rg` Рё С‡С‚РµРЅРёРµ С‚РѕС‡РµС‡РЅС‹С… СѓС‡Р°СЃС‚РєРѕРІ.
-- Р”РѕРєСѓРјРµРЅС‚Р°С†РёСЋ РјРµРЅСЏС‚СЊ С‚РѕР»СЊРєРѕ РµСЃР»Рё РёР·РјРµРЅРёР»Р°СЃСЊ Р»РѕРіРёРєР°/РїСЂРѕС†РµСЃСЃ.
+- Не открывать весь репозиторий сразу.
+- Использовать `rg` и чтение точечных участков.
+- Документацию менять только если изменилась логика/процесс.

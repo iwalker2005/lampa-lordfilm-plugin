@@ -1,43 +1,45 @@
-п»ї# РђСЂС…РёС‚РµРєС‚СѓСЂР° РїСЂРѕРµРєС‚Р° LordFilm РґР»СЏ Lampa
+# Архитектура проекта Lordfilm Aggregator для Lampa
 
-## 1. РќР°Р·РЅР°С‡РµРЅРёРµ
-РџСЂРѕРµРєС‚ СЃРѕСЃС‚РѕРёС‚ РёР· РґРІСѓС… С‡Р°СЃС‚РµР№:
-- РџР»Р°РіРёРЅ Lampa (`src/lordfilm.js`), РєРѕС‚РѕСЂС‹Р№ РёС‰РµС‚ РєРѕРЅС‚РµРЅС‚, РїРѕРґР±РёСЂР°РµС‚ РёСЃС‚РѕС‡РЅРёРєРё Рё Р·Р°РїСѓСЃРєР°РµС‚ РїР»РµРµСЂ.
-- Cloudflare Worker РїСЂРѕРєСЃРё (`proxy/worker.js`), РєРѕС‚РѕСЂС‹Р№ СЂРµС€Р°РµС‚ СЃРµС‚РµРІС‹Рµ РѕРіСЂР°РЅРёС‡РµРЅРёСЏ (CORS, whitelist, stream proxy).
+## 1. Назначение
+Проект состоит из двух частей:
+- Модульный плагин Lampa (агрегатор провайдеров).
+- Cloudflare Worker прокси (CORS, headers rewrite, stream proxy, m3u8 rewrite, cookie proxy).
 
-## 2. РљРѕРјРїРѕРЅРµРЅС‚С‹
+## 2. Компоненты
 
-### 2.1 РџР»Р°РіРёРЅ (`src/lordfilm.js`)
-РћСЃРЅРѕРІРЅС‹Рµ РѕР±СЏР·Р°РЅРЅРѕСЃС‚Рё:
-- РёРЅС‚РµРіСЂР°С†РёСЏ РІ UI Lampa (РєРЅРѕРїРєР° РёСЃС‚РѕС‡РЅРёРєР° `LordFilm`);
-- РјР°С‚С‡РёРЅРі РєР°СЂС‚РѕС‡РєРё Lampa -> РєР°СЂС‚РѕС‡РєР° РЅР° РёСЃС‚РѕС‡РЅРёРєРµ;
-- РїР°СЂСЃРёРЅРі РЅРµСЃРєРѕР»СЊРєРёС… С‚РёРїРѕРІ СЃР°Р№С‚РѕРІ:
-  - DLE-РёСЃС‚РѕС‡РЅРёРє (`lordfilm-2026.org`),
-  - WP-РёСЃС‚РѕС‡РЅРёРє (`spongebob-squarepants-lordfilms.ru`);
-- РёР·РІР»РµС‡РµРЅРёРµ РїР»РµРµСЂРЅС‹С… РґР°РЅРЅС‹С…:
-  - `plapi` playlist/video,
-  - embed-РїРѕС‚РѕРєРё (`api.namy.ws` -> HLS/DASH);
-- РІС‹Р±РѕСЂ РєР°С‡РµСЃС‚РІР°/РѕР·РІСѓС‡РєРё/СЃРµСЂРёР№;
-- Р»РѕРєР°Р»СЊРЅРѕРµ СЃРѕС…СЂР°РЅРµРЅРёРµ РёР·Р±СЂР°РЅРЅРѕРіРѕ Рё РїСЂРѕРіСЂРµСЃСЃР°.
+### 2.1 Плагин
+- `src/core/utils.js` — конфиг, storage, нормализация, score, dedupe.
+- `src/core/network.js` — fetch/proxy слой, таймауты, stream-proxy helpers.
+- `src/core/providers.js` — оркестрация провайдеров (`Promise.allSettled`, fail-fast timeout).
+- `src/providers/*.js` — источники:
+  - `lordfilm.js` (зеркала + SEO домены + dynamic slug + DuckDuckGo fallback)
+  - `collaps.js`
+  - `alloha.js`
+  - `kodik.js`
+  - `cdnvideohub.js`
+  - `rezka.js`
+  - `filmix.js`
+  - `kinobase.js`
+- `src/index.js` — UI-компонент Lampa, кнопка `LordFilm+`, динамическое пополнение списка.
 
-### 2.2 Release С„Р°Р№Р» (`lordfilm.js`)
-- Р­С‚Рѕ С„Р°Р№Р», РєРѕС‚РѕСЂС‹Р№ СЂРµР°Р»СЊРЅРѕ РїРѕРґРєР»СЋС‡Р°РµС‚ Lampa (С‡РµСЂРµР· CDN РёР»Рё `/p`).
-- Р”РѕР»Р¶РµРЅ Р±С‹С‚СЊ РІСЃРµРіРґР° СЃРёРЅС…СЂРѕРЅРёР·РёСЂРѕРІР°РЅ СЃ `src/lordfilm.js`.
+### 2.2 Bundle/Release
+- `src/lordfilm.js` — generated bundle.
+- `lordfilm.js` — generated release файл для CDN/Lampa.
 
 ### 2.3 Worker (`proxy/worker.js`)
-Р­РЅРґРїРѕРёРЅС‚С‹:
-- `GET /health` - РїСЂРѕРІРµСЂРєР° РґРѕСЃС‚СѓРїРЅРѕСЃС‚Рё.
-- `GET /proxy?url=...` - РїСЂРѕРєСЃРё HTML/API-Р·Р°РїСЂРѕСЃРѕРІ.
-- `GET /stream?url=...` - РїСЂРѕРєСЃРё РІРёРґРµРѕРїРѕС‚РѕРєРѕРІ Рё m3u8 rewrite.
-- `GET /p` (Рё `/plugin`, `/plugin.js`, `/`) - РѕС‚РґР°С‡Р° JS РїР»Р°РіРёРЅР°.
+Эндпоинты:
+- `GET /health`
+- `GET|HEAD|POST /proxy?url=...`
+- `GET|HEAD /stream?url=...`
+- `GET /p` (и `/plugin`, `/plugin.js`, `/`) — отдача JS плагина
 
-### 2.4 РљРѕРЅС„РёРі РґРµРїР»РѕСЏ (`proxy/wrangler.toml`)
-РљСЂРёС‚РёС‡РЅС‹Рµ РїРµСЂРµРјРµРЅРЅС‹Рµ:
-- `ALLOWED_HOSTS`
-- `VIDEO_ALLOWED_HOSTS`
-- `UPSTREAM_TIMEOUT_MS`
+Поддержка:
+- `rf` (`Referer` override), `of` (`Origin` override)
+- `X-Proxy-Cookie` / `cookie` passthrough
+- `Set-Cookie` passthrough
+- rewrite `.m3u8` относительных ссылок на `/stream`
 
-## 3. РЎС‚СЂСѓРєС‚СѓСЂР° СЂРµРїРѕР·РёС‚РѕСЂРёСЏ
+## 3. Структура репозитория
 
 ```text
 lampa-plugin/
@@ -45,8 +47,12 @@ lampa-plugin/
 |-- README.md
 |-- lordfilm.js
 |-- src/
+|   |-- core/
+|   |-- providers/
+|   |-- index.js
 |   `-- lordfilm.js
 |-- scripts/
+|   |-- build-plugin.ps1
 |   `-- sync-plugin.ps1
 |-- proxy/
 |   |-- worker.js
@@ -56,33 +62,34 @@ lampa-plugin/
     |-- LLM_CONTEXT.md
     |-- SPEC.md
     |-- ARCHITECTURE.md
-    `-- РўР—_LordFilm_Lampa_v1.1.md
+    `-- ТЗ_LordFilm_Lampa_v1.1.md
 ```
 
-## 4. РћСЃРЅРѕРІРЅРѕР№ РїРѕС‚РѕРє РґР°РЅРЅС‹С…
-1. РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ РѕС‚РєСЂС‹РІР°РµС‚ РєР°СЂС‚РѕС‡РєСѓ РІ Lampa Рё РІС‹Р±РёСЂР°РµС‚ `LordFilm`.
-2. РџР»Р°РіРёРЅ С„РѕСЂРјРёСЂСѓРµС‚ РїРѕРёСЃРєРѕРІС‹Рµ Р·Р°РїСЂРѕСЃС‹ (`title`, `original_title`, `original_name`).
-3. РџР»Р°РіРёРЅ РёС‰РµС‚ РєР°РЅРґРёРґР°С‚РѕРІ РЅР° РёСЃС‚РѕС‡РЅРёРєР°С… Рё СЂР°РЅР¶РёСЂСѓРµС‚ РјР°С‚С‡.
-4. РџРѕСЃР»Рµ РІС‹Р±РѕСЂР° РєР°СЂС‚РѕС‡РєРё:
-   - Р»РёР±Рѕ Р·Р°РіСЂСѓР¶Р°РµС‚СЃСЏ `plapi` playlist/video,
-   - Р»РёР±Рѕ РёР·РІР»РµРєР°СЋС‚СЃСЏ embed-РїРѕС‚РѕРєРё (`api.namy.ws`).
-5. Р¤РѕСЂРјРёСЂСѓРµС‚СЃСЏ quality map Рё Р·Р°РїСѓСЃРєР°РµС‚СЃСЏ `Lampa.Player`.
-6. РџСЂРѕРіСЂРµСЃСЃ/РёР·Р±СЂР°РЅРЅРѕРµ СЃРѕС…СЂР°РЅСЏСЋС‚СЃСЏ РІ `Lampa.Storage`.
+## 4. Поток данных
+1. Пользователь открывает карточку и выбирает `LordFilm+`.
+2. Компонент запускает активные провайдеры параллельно (`Promise.allSettled`).
+3. Каждый провайдер возвращает варианты воспроизведения или ошибку (до 5000 мс).
+4. UI обновляется по мере ответов (без ожидания всех провайдеров).
+5. При выборе пункта извлекается `sourceMap`, выбирается качество, запускается `Lampa.Player`.
 
-## 5. РўРµС…РЅРёС‡РµСЃРєРёРµ РїСЂР°РІРёР»Р° РёР·РјРµРЅРµРЅРёР№
-- РњРµРЅСЏС‚СЊ РїР»Р°РіРёРЅ С‚РѕР»СЊРєРѕ РІ `src/lordfilm.js`.
-- РџРѕСЃР»Рµ РїСЂР°РІРѕРє Р·Р°РїСѓСЃРєР°С‚СЊ `scripts/sync-plugin.ps1`.
-- РџСЂРѕРІРµСЂРєРё:
+## 5. Технические правила изменений
+- Изменения вносятся в модульные файлы (`src/core/*`, `src/providers/*`, `src/index.js`).
+- После правок запускать:
+  - `powershell -ExecutionPolicy Bypass -File .\scripts\build-plugin.ps1`
+- Проверки:
+  - `node --check src/index.js`
   - `node --check src/lordfilm.js`
   - `node --check lordfilm.js`
-  - `node --check proxy/worker.js` (РµСЃР»Рё С‚СЂРѕРіР°Р»Рё РїСЂРѕРєСЃРё)
-- РџСЂРё РёР·РјРµРЅРµРЅРёСЏС… `proxy/*` РґРµР»Р°С‚СЊ `npx wrangler deploy`.
+  - `node --check proxy/worker.js` (если трогали прокси)
+- При изменениях `proxy/*` деплой:
+  - `cd proxy`
+  - `npx wrangler deploy`
 
-## 6. РўРёРїРѕРІС‹Рµ РїСЂРёС‡РёРЅС‹ РёРЅС†РёРґРµРЅС‚РѕРІ
-- РСЃС‚РѕС‡РЅРёРє РїРѕРјРµРЅСЏР» РІРµСЂСЃС‚РєСѓ/СЃРµР»РµРєС‚РѕСЂС‹ (`parseSearch`, `parsePlayerMeta`).
-- РСЃС‚РѕС‡РЅРёРє СЃРјРµРЅРёР» РґРѕРјРµРЅ Рё РЅРµ РѕР±РЅРѕРІР»С‘РЅ whitelist РІ Worker.
-- HLS РјР°РЅРёС„РµСЃС‚ СЃРѕРґРµСЂР¶РёС‚ РѕС‚РЅРѕСЃРёС‚РµР»СЊРЅС‹Рµ URI Рё РЅРµ РїРµСЂРµРїРёСЃР°РЅ.
-- РџР»Р°РіРёРЅ Рё release-С„Р°Р№Р» СЂР°СЃСЃРёРЅС…СЂРѕРЅРёР·РёСЂРѕРІР°РЅС‹.
+## 6. Типовые причины инцидентов
+- Изменился HTML/JS конкретного провайдера.
+- Неактуальный `ALLOWED_HOSTS`/`VIDEO_ALLOWED_HOSTS` в Worker.
+- Источник требует специфические `Referer/Origin/Cookie`.
+- Bundle не пересобран после изменений модулей.
 
 ## 7. Production URL
 - Worker: `https://lordfilm-proxy-iwalker2005.ivonin38.workers.dev`

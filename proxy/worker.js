@@ -1,16 +1,32 @@
-const VERSION = '1.0.7';
+const VERSION = '2.0.0';
 
 const PLUGIN_SOURCE_URL = 'https://raw.githubusercontent.com/iwalker2005/lampa-lordfilm-plugin/main/lordfilm.js';
 
 const DEFAULT_ALLOWED_HOSTS = [
   'lordfilm-2026.org',
   'www.lordfilm-2026.org',
+  'lordfilmpuq.study',
+  'www.lordfilmpuq.study',
+  'gentalmen-lordfilm.ru',
+  'www.gentalmen-lordfilm.ru',
+  '12-angry-men-lordfilm.ru',
+  'www.12-angry-men-lordfilm.ru',
   'spongebob-squarepants-lordfilms.ru',
   'www.spongebob-squarepants-lordfilms.ru',
+  'html.duckduckgo.com',
   '*.lordfilm.ru',
   'plapi.cdnvideohub.com',
   'player.cdnvideohub.com',
   'api.namy.ws',
+  'api.kinogram.best',
+  'api.apbugall.org',
+  'kodikapi.com',
+  'kodik.info',
+  'kodik.biz',
+  'rezka.ag',
+  'hdrezka.ag',
+  'filmix.my',
+  'kinobase.org',
   'api.rstprgapipt.com',
   '*.okcdn.ru',
   '*.allarknow.online',
@@ -22,6 +38,13 @@ const DEFAULT_VIDEO_HOSTS = [
   '*.vkuser.net',
   '*.interkh.com',
   '*.stloadi.live',
+  '*.kodik.info',
+  '*.kodik.biz',
+  '*.kodikapi.com',
+  '*.kinobase.org',
+  '*.filmix.my',
+  '*.rezka.ag',
+  '*.rezka.pub',
   'plapi.cdnvideohub.com',
   'player.cdnvideohub.com'
 ];
@@ -48,8 +71,8 @@ function corsHeaders(extra = {}) {
   return {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'GET,HEAD,POST,OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, X-Proxy-Token, Range, X-Requested-With, Borth, DLE-API-TOKEN, Iframe-Request-Id, Authorization',
-    'Access-Control-Expose-Headers': 'Content-Type, Content-Length, Content-Range, Accept-Ranges, Cache-Control, ETag',
+    'Access-Control-Allow-Headers': 'Content-Type, X-Proxy-Token, X-Proxy-Cookie, Range, X-Requested-With, Borth, DLE-API-TOKEN, Iframe-Request-Id, Authorization',
+    'Access-Control-Expose-Headers': 'Content-Type, Content-Length, Content-Range, Accept-Ranges, Cache-Control, ETag, Set-Cookie',
     'Vary': 'Origin',
     ...extra
   };
@@ -60,6 +83,20 @@ function json(data, status = 200) {
     status,
     headers: corsHeaders({ 'Content-Type': 'application/json; charset=utf-8' })
   });
+}
+
+function getSetCookies(headers) {
+  try {
+    if (typeof headers.getSetCookie === 'function') {
+      const list = headers.getSetCookie();
+      if (Array.isArray(list)) return list;
+    }
+  } catch (e) {}
+  const out = [];
+  headers.forEach((value, key) => {
+    if (String(key || '').toLowerCase() === 'set-cookie') out.push(value);
+  });
+  return out;
 }
 
 function toStreamUrl(proxyBase, target, token = '') {
@@ -111,7 +148,9 @@ async function forwardRequest(request, targetUrl, {
   streamMode = false,
   proxyBase = '',
   streamToken = '',
-  refererOverride = ''
+  refererOverride = '',
+  originOverride = '',
+  cookieOverride = ''
 } = {}) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -131,6 +170,7 @@ async function forwardRequest(request, targetUrl, {
       'if-modified-since',
       'range',
       'content-type',
+      'cookie',
       'x-requested-with',
       'borth',
       'dle-api-token',
@@ -141,6 +181,7 @@ async function forwardRequest(request, targetUrl, {
       const v = request.headers.get(h);
       if (v) headers.set(h, v);
     });
+    if (cookieOverride) headers.set('Cookie', String(cookieOverride));
 
     let rf = '';
     if (refererOverride) {
@@ -152,15 +193,28 @@ async function forwardRequest(request, targetUrl, {
     }
 
     const forceOriginHeaders = !/^(?:.*\.)?api\.namy\.ws$/i.test(targetUrl.hostname);
+    let of = '';
+    if (originOverride) {
+      try {
+        of = new URL(originOverride).origin;
+      } catch (e) {
+        of = '';
+      }
+    }
     if (rf) {
       headers.set('Referer', rf);
-      if (forceOriginHeaders) {
+      if (of) {
+        headers.set('Origin', of);
+      } else if (forceOriginHeaders) {
         try {
           headers.set('Origin', new URL(rf).origin);
         } catch (e) {
           headers.set('Origin', targetUrl.origin);
         }
       }
+    } else if (of) {
+      headers.set('Origin', of);
+      headers.set('Referer', of + '/');
     } else if (forceOriginHeaders) {
       headers.set('Origin', targetUrl.origin);
       headers.set('Referer', targetUrl.origin + '/');
@@ -181,10 +235,18 @@ async function forwardRequest(request, targetUrl, {
 
     if (wrapJson) {
       const body = await upstream.text();
+      const setCookie = getSetCookies(upstream.headers);
+      const headerDump = {};
+      upstream.headers.forEach((v, k) => {
+        if (String(k).toLowerCase() === 'set-cookie') return;
+        headerDump[k] = v;
+      });
       return json({
         status: upstream.status,
         content_type: upstream.headers.get('content-type') || 'text/plain; charset=utf-8',
-        body
+        body,
+        headers: headerDump,
+        set_cookie: setCookie
       }, upstream.ok ? 200 : upstream.status);
     }
 
@@ -196,6 +258,9 @@ async function forwardRequest(request, targetUrl, {
     copyResponseHeaders.forEach((h) => {
       const v = upstream.headers.get(h);
       if (v) passHeaders.set(h, v);
+    });
+    getSetCookies(upstream.headers).forEach((cookie) => {
+      passHeaders.append('Set-Cookie', cookie);
     });
 
     Object.entries(corsHeaders()).forEach(([k, v]) => passHeaders.set(k, v));
@@ -280,12 +345,16 @@ export default {
 
       const wrap = url.searchParams.get('wrap') === '1';
       const refererOverride = url.searchParams.get('rf') || '';
+      const originOverride = url.searchParams.get('of') || '';
+      const cookieOverride = request.headers.get('X-Proxy-Cookie') || url.searchParams.get('cookie') || '';
       try {
         return await forwardRequest(request, target, {
           timeoutMs,
           wrapJson: wrap,
           streamMode: false,
-          refererOverride
+          refererOverride,
+          originOverride,
+          cookieOverride
         });
       } catch (e) {
         if (e.name === 'AbortError') return json({ status: 504, error: 'Upstream timeout' }, 504);
@@ -313,13 +382,19 @@ export default {
       if (!hostAllowed(target.hostname, videoHosts)) return json({ status: 403, error: 'Video host is not allowed' }, 403);
 
       const streamToken = url.searchParams.get('token') || '';
+      const refererOverride = url.searchParams.get('rf') || '';
+      const originOverride = url.searchParams.get('of') || '';
+      const cookieOverride = request.headers.get('X-Proxy-Cookie') || url.searchParams.get('cookie') || '';
       try {
         return await forwardRequest(request, target, {
           timeoutMs,
           wrapJson: false,
           streamMode: true,
           proxyBase: url.origin,
-          streamToken
+          streamToken,
+          refererOverride,
+          originOverride,
+          cookieOverride
         });
       } catch (e) {
         if (e.name === 'AbortError') return json({ status: 504, error: 'Upstream timeout' }, 504);
