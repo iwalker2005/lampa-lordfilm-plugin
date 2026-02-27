@@ -1,6 +1,6 @@
 const VERSION = '1.0.3';
 
-const PLUGIN_SOURCE_URL = 'https://cdn.jsdelivr.net/gh/iwalker2005/lampa-lordfilm-plugin@main/lordfilm.js';
+const PLUGIN_SOURCE_URL = 'https://raw.githubusercontent.com/iwalker2005/lampa-lordfilm-plugin/main/lordfilm.js';
 
 const DEFAULT_ALLOWED_HOSTS = [
   'lordfilm-2026.org',
