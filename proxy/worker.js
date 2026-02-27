@@ -1,12 +1,15 @@
-const VERSION = '1.0.4';
+const VERSION = '1.0.5';
 
 const PLUGIN_SOURCE_URL = 'https://raw.githubusercontent.com/iwalker2005/lampa-lordfilm-plugin/main/lordfilm.js';
 
 const DEFAULT_ALLOWED_HOSTS = [
   'lordfilm-2026.org',
   'www.lordfilm-2026.org',
+  'spongebob-squarepants-lordfilms.ru',
+  'www.spongebob-squarepants-lordfilms.ru',
   'plapi.cdnvideohub.com',
   'player.cdnvideohub.com',
+  'api.namy.ws',
   'api.rstprgapipt.com',
   '*.okcdn.ru',
   '*.allarknow.online',
@@ -16,6 +19,8 @@ const DEFAULT_ALLOWED_HOSTS = [
 const DEFAULT_VIDEO_HOSTS = [
   '*.okcdn.ru',
   '*.vkuser.net',
+  '*.interkh.com',
+  '*.stloadi.live',
   'plapi.cdnvideohub.com',
   'player.cdnvideohub.com'
 ];
@@ -119,8 +124,11 @@ async function forwardRequest(request, targetUrl, {
       if (v) headers.set(h, v);
     });
 
-    headers.set('Origin', targetUrl.origin);
-    headers.set('Referer', targetUrl.origin + '/');
+    const forceOriginHeaders = !/^(?:.*\.)?api\.namy\.ws$/i.test(targetUrl.hostname);
+    if (forceOriginHeaders) {
+      headers.set('Origin', targetUrl.origin);
+      headers.set('Referer', targetUrl.origin + '/');
+    }
 
     const upstream = await fetch(targetUrl.toString(), {
       method,

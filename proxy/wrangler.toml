@@ -4,6 +4,6 @@ compatibility_date = "2026-02-26"
 workers_dev = true
 
 [vars]
-ALLOWED_HOSTS = "lordfilm-2026.org,www.lordfilm-2026.org,plapi.cdnvideohub.com,player.cdnvideohub.com,api.rstprgapipt.com,*.okcdn.ru,*.allarknow.online,*.stloadi.live"
-VIDEO_ALLOWED_HOSTS = "*.okcdn.ru,*.vkuser.net,plapi.cdnvideohub.com,player.cdnvideohub.com"
+ALLOWED_HOSTS = "lordfilm-2026.org,www.lordfilm-2026.org,spongebob-squarepants-lordfilms.ru,www.spongebob-squarepants-lordfilms.ru,plapi.cdnvideohub.com,player.cdnvideohub.com,api.namy.ws,api.rstprgapipt.com,*.okcdn.ru,*.allarknow.online,*.stloadi.live"
+VIDEO_ALLOWED_HOSTS = "*.okcdn.ru,*.vkuser.net,*.interkh.com,*.stloadi.live,plapi.cdnvideohub.com,player.cdnvideohub.com"
 UPSTREAM_TIMEOUT_MS = "12000"
