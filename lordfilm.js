@@ -36,7 +36,14 @@ var PROVIDERS = [
   { key: 'cdnvideohub', title: 'CDNVideoHub', enabled: true },
   { key: 'rezka', title: 'HDRezka', enabled: true },
   { key: 'filmix', title: 'Filmix', enabled: true },
-  { key: 'kinobase', title: 'Kinobase', enabled: true }
+  { key: 'kinobase', title: 'Kinobase', enabled: true },
+  { key: 'lumex2', title: 'Lumex2', enabled: true },
+  { key: 'cdnmovies', title: 'CDNMovies', enabled: true },
+  { key: 'fanserials', title: 'FanSerials', enabled: true },
+  { key: 'videoseed', title: 'VideoSeed', enabled: true },
+  { key: 'anilibria', title: 'AniLibria', enabled: true },
+  { key: 'anilibria2', title: 'AniLibria2', enabled: true },
+  { key: 'animelib', title: 'Animelib', enabled: true }
 ];
 
 var MAP = {
@@ -602,6 +609,204 @@ mod.network = {
 };
 
 })(window.__LORDFILM_AGG__ = window.__LORDFILM_AGG__ || {});
+
+// ---- balance_utils.js ----
+(function(mod){
+'use strict';
+
+var network = mod.network;
+
+function parseJsonSafe(text){
+  try {
+    return JSON.parse(text);
+  } catch (e) {
+    return null;
+  }
+}
+
+function normalizeUrl(value, baseUrl){
+  var raw = String(value || '').trim();
+  if (!raw) return '';
+  if (/^https?:\/\//i.test(raw)) return raw;
+  if (/^\/\//.test(raw)) return 'https:' + raw;
+  try {
+    return new URL(raw, baseUrl || 'https://example.com').toString();
+  } catch (e) {
+    return raw;
+  }
+}
+
+function collectUrls(input, out, baseUrl){
+  if (!input) return;
+
+  if (typeof input === 'string') {
+    var raw = String(input || '').trim();
+    if (!raw) return;
+
+    var parsed = parseJsonSafe(raw);
+    if (parsed) {
+      collectUrls(parsed, out, baseUrl);
+      return;
+    }
+
+    var pairReg = /\[(\d{3,4})p?\]\s*(https?:\/\/[^"'`<>\s,]+)/ig;
+    var pair;
+    while ((pair = pairReg.exec(raw))) {
+      out.push({
+        label: pair[1] + 'p',
+        url: normalizeUrl(pair[2], baseUrl)
+      });
+    }
+
+    var simpleReg = /(?:https?:)?\/\/[^"'`<>\s,]+(?:\.m3u8|\.mpd|\.mp4|\.m4s)?[^"'`<>\s,]*/ig;
+    var found;
+    while ((found = simpleReg.exec(raw))) {
+      out.push(normalizeUrl(found[0], baseUrl));
+    }
+    return;
+  }
+
+  if (Array.isArray(input)) {
+    input.forEach(function(node){
+      collectUrls(node, out, baseUrl);
+    });
+    return;
+  }
+
+  if (typeof input === 'object') {
+    var keys = ['label', 'quality', 'name', 'title', 'url', 'file', 'src', 'link', 'playlist', 'hls', 'dash', 'dasha', 'hlsUrl', 'dashUrl', 'mp4', 'm3u8', 'mpd'];
+
+    keys.forEach(function(key){
+      if (typeof input[key] !== 'undefined' && input[key] !== null) {
+        if (key === 'label' || key === 'quality' || key === 'name' || key === 'title') {
+          return;
+        }
+        collectUrls(input[key], out, baseUrl);
+      }
+    });
+
+    Object.keys(input).forEach(function(key){
+      if (keys.indexOf(key) !== -1) return;
+      collectUrls(input[key], out, baseUrl);
+    });
+  }
+}
+
+function qualityFromText(label, url){
+  var raw = String(label || '') + ' ' + String(url || '');
+  var match = raw.match(/(2160|1440|1080|720|480|360|240|144)\s*p?/i);
+  return match ? (match[1] + 'p') : '';
+}
+
+function buildSourceMapFromUrls(urls, baseUrl){
+  var map = {};
+  var seen = {};
+
+  (urls || []).forEach(function(item){
+    var url = '';
+    var label = '';
+
+    if (typeof item === 'string') {
+      url = normalizeUrl(item, baseUrl);
+    } else if (item && typeof item === 'object') {
+      url = normalizeUrl(item.url || item.file || item.src || item.link || '', baseUrl);
+      label = String(item.label || item.quality || item.name || item.title || '').trim();
+    }
+
+    if (!url || seen[url]) return;
+    seen[url] = 1;
+
+    if (!label) {
+      label = qualityFromText('', url);
+      if (!label) {
+        if (/\.m3u8(?:$|\?)/i.test(url)) label = 'Auto HLS';
+        else if (/\.mpd(?:$|\?)/i.test(url)) label = 'Auto DASH';
+        else if (/\.mp4(?:$|\?)/i.test(url)) label = 'MP4';
+        else label = 'Auto';
+      }
+    }
+
+    if (!map[label]) map[label] = network.proxifyStream(url);
+  });
+
+  return map;
+}
+
+function sourceMapFromText(text, baseUrl){
+  var urls = [];
+  collectUrls(text, urls, baseUrl);
+  return buildSourceMapFromUrls(urls, baseUrl);
+}
+
+function parsePlayerObject(text){
+  var raw = String(text || '').replace(/\r?\n/g, ' ');
+  var found = raw.match(/Playerjs\(({.*?})\);/i) ||
+    raw.match(/var\s+playerOptions\s*=\s*({.*?});/i) ||
+    raw.match(/makePlayer\s*\(\s*(\{[\s\S]*?\})\s*\);/i) ||
+    raw.match(/var\s+plr_config\s*=\s*({.*?});/i) ||
+    raw.match(/var\s+plr_config\s*=\s*"([^"]*)";/i);
+
+  if (!found) return null;
+
+  try {
+    if (found[1] && found[1].charAt(0) === '{') {
+      return (0, eval)('"use strict"; (' + found[1] + ')');
+    }
+
+    if (found[1] && /^https?:/i.test(found[1])) {
+      return { file: found[1] };
+    }
+
+    var decoded = found[1];
+    if (decoded && decoded.charAt(0) === '#') return { file: decoded };
+    return (0, eval)('"use strict"; (' + decoded + ')');
+  } catch (e) {
+    return null;
+  }
+}
+
+function decodeTrashData(data, trashList, separator){
+  var raw = String(data || '');
+  if (!raw || raw.charAt(0) !== '#') return raw;
+
+  var sep = typeof separator === 'string' ? separator : '//';
+  var enc = function(str){
+    return btoa(encodeURIComponent(str).replace(/%([0-9A-F]{2})/g, function(match, p1){
+      return String.fromCharCode('0x' + p1);
+    }));
+  };
+  var dec = function(str){
+    return decodeURIComponent(atob(str).split('').map(function(c){
+      return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+    }).join(''));
+  };
+
+  var x = raw.substring(2);
+  (trashList || []).forEach(function(trash){
+    x = x.replace(sep + enc(trash), '');
+  });
+
+  try {
+    return dec(x);
+  } catch (e) {
+    return '';
+  }
+}
+
+mod.core = mod.core || {};
+mod.core.balance = {
+  parseJsonSafe: parseJsonSafe,
+  normalizeUrl: normalizeUrl,
+  collectUrls: collectUrls,
+  qualityFromText: qualityFromText,
+  buildSourceMapFromUrls: buildSourceMapFromUrls,
+  sourceMapFromText: sourceMapFromText,
+  parsePlayerObject: parsePlayerObject,
+  decodeTrashData: decodeTrashData
+};
+
+})(window.__LORDFILM_AGG__ = window.__LORDFILM_AGG__ || {});
+
 
 // ---- reyohoho_catalog.js ----
 ;(function(){
@@ -2919,6 +3124,1029 @@ mod.providers.kinobase = {
 };
 
 })(window.__LORDFILM_AGG__ = window.__LORDFILM_AGG__ || {});
+
+// ---- lumex2.js ----
+(function(mod){
+'use strict';
+
+var shared = mod.shared;
+var network = mod.network;
+var balance = mod.core.balance;
+
+var HOST = 'https://api.lampa.stream/lumex/';
+
+function cleanText(value){
+  return shared.clean(value || '');
+}
+
+function extractNumber(value){
+  var match = String(value || '').match(/(\d{1,4})/);
+  return match ? parseInt(match[1], 10) : 0;
+}
+
+function getAccountEmail(){
+  try {
+    var raw = shared.sget('account', '{}') || '{}';
+    var account = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    return String(account && account.email || 'none').trim() || 'none';
+  } catch (e) {
+    return 'none';
+  }
+}
+
+function base64Url(value){
+  try {
+    return btoa(String(value || ''));
+  } catch (e) {
+    return '';
+  }
+}
+
+async function fetchMyIp(){
+  var json = await network.requestPreferProxy('https://api.ipify.org/?format=json', {
+    type: 'json',
+    timeout: 5000,
+    retries: 0
+  }).catch(function(){ return null; });
+  return json && json.ip ? String(json.ip) : '';
+}
+
+function qualityMapFromObject(obj){
+  var map = {};
+  Object.keys(obj || {}).forEach(function(label){
+    var url = obj[label];
+    if (url) map[label] = network.proxifyStream(url);
+  });
+  return map;
+}
+
+function makeItem(meta, node, state, ip, apiSuffix){
+  var voice = cleanText(node.translation_name || node.voice_name || state.voice || node.title || node.comment || 'Original');
+  var season = state.season || extractNumber(node.season_id || node.season || '');
+  var episode = state.episode || extractNumber(node.episode_id || node.episode || '');
+  var title = season && episode
+    ? ('S' + season + 'E' + episode + ' | ' + voice)
+    : (voice || meta.title || meta.original_title || 'Original');
+
+  return {
+    id: ['lumex2', meta.id || meta.kinopoisk_id || meta.imdb_id || meta.title || 'unknown', season || 0, episode || 0, voice].join('|'),
+    provider: 'lumex2',
+    providerLabel: 'Lumex2',
+    voice: voice,
+    season: season || 0,
+    episode: episode || 0,
+    maxQuality: node.max_quality ? String(node.max_quality) + 'p' : '',
+    title: title,
+    media: node,
+    loadSourceMap: async function(){
+      if (node.qualitys && typeof node.qualitys === 'object') {
+        var fromQualitys = qualityMapFromObject(node.qualitys);
+        if (Object.keys(fromQualitys).length) return fromQualitys;
+      }
+
+      var sourceUrl = String(node.playlist || node.url || node.file || '').trim();
+
+      if (!sourceUrl) return {};
+
+      if (node.playlist) {
+        var json = await network.requestPreferProxy(sourceUrl, {
+          type: 'json',
+          timeout: 10000,
+          retries: 0
+        }).catch(function(){ return null; });
+
+        if (json && json.url) {
+          if (json.qualitys && typeof json.qualitys === 'object') {
+            var qmap = qualityMapFromObject(json.qualitys);
+            if (Object.keys(qmap).length) return qmap;
+          }
+          return network.sourceMapFromUrl(json.url);
+        }
+
+        return balance.sourceMapFromText(json || '', sourceUrl);
+      }
+
+      if (node.url && ip) {
+        var api = sourceUrl + '/' + encodeURIComponent(ip) + apiSuffix;
+        var result = await network.requestPreferProxy(api, {
+          type: 'json',
+          timeout: 10000,
+          retries: 0
+        }).catch(function(){ return null; });
+
+        if (result && result.url) {
+          if (result.qualitys && typeof result.qualitys === 'object') {
+            var resultMap = qualityMapFromObject(result.qualitys);
+            if (Object.keys(resultMap).length) return resultMap;
+          }
+          return network.sourceMapFromUrl(result.url);
+        }
+
+        if (result && result.data && result.data.url) {
+          return network.sourceMapFromUrl(result.data.url);
+        }
+      }
+
+      return balance.sourceMapFromText(sourceUrl, sourceUrl);
+    }
+  };
+}
+
+function walkNode(node, state, out, meta, ip, apiSuffix){
+  if (!node) return;
+
+  if (Array.isArray(node)) {
+    node.forEach(function(child){
+      walkNode(child, state, out, meta, ip, apiSuffix);
+    });
+    return;
+  }
+
+  if (typeof node !== 'object') return;
+
+  var next = {
+    season: state.season || 0,
+    episode: state.episode || 0,
+    voice: state.voice || ''
+  };
+
+  var title = cleanText(node.title || node.comment || node.name || node.voice_name || node.translation_name || '');
+  if (node.season_id != null) next.season = parseInt(node.season_id, 10) || next.season;
+  if (node.episode_id != null) next.episode = parseInt(node.episode_id, 10) || next.episode;
+
+  if (title) {
+    if (!next.season && /сезон|season/i.test(title)) next.season = extractNumber(title);
+    if (!next.episode && /серия|episode|эпизод/i.test(title)) next.episode = extractNumber(title);
+    if (!/сезон|season|серия|episode|эпизод/i.test(title)) next.voice = title;
+  }
+
+  if (node.folder) {
+    walkNode(node.folder, next, out, meta, ip, apiSuffix);
+    return;
+  }
+
+  if (node.episodes) {
+    walkNode(node.episodes, next, out, meta, ip, apiSuffix);
+    return;
+  }
+
+  if (node.file || node.url || node.playlist || node.qualitys) {
+    out.push(makeItem(meta, node, next, ip, apiSuffix));
+    return;
+  }
+
+  Object.keys(node).forEach(function(key){
+    if (['title', 'comment', 'name', 'voice_name', 'translation_name', 'season_id', 'episode_id', 'folder', 'episodes', 'file', 'url', 'playlist', 'qualitys', 'max_quality'].indexOf(key) !== -1) return;
+    walkNode(node[key], next, out, meta, ip, apiSuffix);
+  });
+}
+
+function flattenResponse(json, meta, ip, apiSuffix){
+  var root = json && (json.folder || (json.player && json.player.media) || json.data || json);
+  var items = [];
+  walkNode(root, { season: 0, episode: 0, voice: '' }, items, meta, ip, apiSuffix);
+  return shared.dedupeItems(items).slice(0, 200);
+}
+
+async function search(meta){
+  if (!meta || !(meta.kinopoisk_id || meta.imdb_id || meta.title || meta.original_title)) return [];
+
+  var title = meta.title || meta.original_title || meta.original_name || '';
+  if (!title) return [];
+
+  var movieId = meta.id || meta.kinopoisk_id || meta.imdb_id || title;
+  var kpId = meta.kinopoisk_id || 'null';
+  var imdbId = meta.imdb_id || 'null';
+  var cubId = base64Url(getAccountEmail() || 'none');
+  var apiSuffix = '/' + encodeURIComponent(base64Url(window.location && window.location.href || ''));
+  var ip = await fetchMyIp();
+  var url = HOST + 'sId/' + encodeURIComponent(movieId) + '/mod/' + encodeURIComponent(kpId) + '/' + encodeURIComponent(imdbId) + '/' + cubId + apiSuffix;
+
+  if (ip) url = Lampa.Utils.addUrlComponent(url, 'ip=' + encodeURIComponent(ip));
+  url = Lampa.Utils.addUrlComponent(url, 'search=' + encodeURIComponent(title));
+  url = Lampa.Utils.addUrlComponent(url, 'original_title=' + encodeURIComponent(meta.original_title || meta.original_name || ''));
+  url = Lampa.Utils.addUrlComponent(url, 'year=' + encodeURIComponent(meta.year || 0));
+
+  var json = await network.requestPreferProxy(url, {
+    type: 'json',
+    timeout: 15000,
+    retries: 0
+  }).catch(function(){ return null; });
+
+  return flattenResponse(json, meta, ip, apiSuffix);
+}
+
+mod.providers = mod.providers || {};
+mod.providers.lumex2 = {
+  key: 'lumex2',
+  title: 'Lumex2',
+  search: search
+};
+
+})(window.__LORDFILM_AGG__ = window.__LORDFILM_AGG__ || {});
+
+
+// ---- cdnmovies.js ----
+(function(mod){
+'use strict';
+
+var shared = mod.shared;
+var network = mod.network;
+var balance = mod.core.balance;
+
+var HOST = 'https://cdnmovies-stream.online';
+var EMBED = HOST + '/';
+var USER_AGENT = 'Mozilla/5.0 (Linux; Android 10; K; client) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.6167.178 Mobile Safari/537.36';
+var TRASH_LIST = ['wNp2wBTNcPRQvTC0_CpxCsq_8T1u9Q', 'md-Od2G9RWOgSa5HoBSSbWrCyIqQyY', 'kzuOYQqB_QSOL-xzN_Kz3kkgkHhHit', '6-xQWMh7ertLp8t_M9huUDk1M0VrYJ', 'RyTwtf15_GLEsXxnpU4Ljjd0ReY-VH'];
+
+function cleanText(value){
+  return shared.clean(value || '');
+}
+
+function decode(data){
+  return balance.decodeTrashData(data, TRASH_LIST, '//');
+}
+
+function extractNumber(value){
+  var match = String(value || '').match(/(\d{1,4})/);
+  return match ? parseInt(match[1], 10) : 0;
+}
+
+function mediaMapFromText(text, baseUrl){
+  var decoded = decode(text);
+  if (!decoded) return {};
+  return balance.sourceMapFromText(decoded, baseUrl);
+}
+
+function makeItem(meta, raw, season, episode, title, baseUrl){
+  var media = raw || {};
+  var voice = cleanText(title || media.title || media.comment || meta.title || meta.original_title || 'Original');
+  return {
+    id: ['cdnmovies', meta.kinopoisk_id || meta.imdb_id || meta.title || 'unknown', season || 0, episode || 0, voice].join('|'),
+    provider: 'cdnmovies',
+    providerLabel: 'CDNMovies',
+    voice: voice,
+    season: season || 0,
+    episode: episode || 0,
+    maxQuality: 'Auto',
+    title: voice,
+    media: media,
+    loadSourceMap: async function(){
+      if (media.qualitys && typeof media.qualitys === 'object') {
+        var map = {};
+        Object.keys(media.qualitys).forEach(function(label){
+          if (media.qualitys[label]) map[label] = network.proxifyStream(media.qualitys[label]);
+        });
+        if (Object.keys(map).length) return map;
+      }
+
+      if (media.file) return mediaMapFromText(media.file, baseUrl);
+      if (media.sources) return balance.sourceMapFromText(media.sources, baseUrl);
+      if (media.url) return balance.sourceMapFromText(media.url, baseUrl);
+      return {};
+    }
+  };
+}
+
+function parsePlayerOptions(text, meta, baseUrl){
+  var json = balance.parsePlayerObject(text);
+  if (!json) return [];
+
+  if (json.file && typeof json.file === 'string') {
+    json.file = decode(json.file);
+    try {
+      json.file = JSON.parse(json.file);
+    } catch (e) {
+      json = {
+        file: [json]
+      };
+    }
+  }
+
+  var items = [];
+  var list = json.file && Array.isArray(json.file) ? json.file : [];
+
+  list.forEach(function(node, index){
+    if (!node) return;
+
+    if (node.folder && Array.isArray(node.folder)) {
+      var voiceTitle = cleanText(node.title || node.comment || node.name || 'Original');
+      node.folder.forEach(function(entry){
+        if (!entry) return;
+        var episodeNum = extractNumber(entry.title || entry.comment || entry.name || '');
+        items.push(makeItem(meta, entry, 0, episodeNum, voiceTitle, baseUrl));
+      });
+      return;
+    }
+
+    var title = cleanText(node.title || node.comment || node.name || 'Original');
+    var season = extractNumber(node.season || node.title || '');
+    var episode = extractNumber(node.episode || node.comment || node.name || '');
+    items.push(makeItem(meta, node, season, episode, title, baseUrl));
+  });
+
+  return shared.dedupeItems(items);
+}
+
+async function resolveEpisodePage(url, meta){
+  var html = await network.requestPreferProxy(url, {
+    type: 'text',
+    timeout: 10000,
+    retries: 0,
+    proxyReferer: url,
+    headers: {
+      'User-Agent': USER_AGENT
+    }
+  }).catch(function(){ return ''; });
+
+  if (!html) return [];
+
+  var playerMatch = html.match(/\bvideoUrl = '(http[^']*)'/);
+  var playerLink = playerMatch && playerMatch[1] ? String(playerMatch[1]) : '';
+  if (!playerLink) return [];
+
+  var playerHtml = await network.requestPreferProxy(playerLink, {
+    type: 'text',
+    timeout: 10000,
+    retries: 0,
+    proxyReferer: url,
+    headers: {
+      'User-Agent': USER_AGENT
+    }
+  }).catch(function(){ return ''; });
+
+  if (!playerHtml) return [];
+  return parsePlayerOptions(playerHtml, meta || {}, playerLink);
+}
+
+async function search(meta){
+  var id = meta && (meta.kinopoisk_id || meta.imdb_id);
+  if (!id) return [];
+
+  var kind = meta.kinopoisk_id ? 'kinopoisk' : 'imdb';
+  var url = EMBED + kind + '/' + encodeURIComponent(id) + '/iframe';
+  var html = await network.requestPreferProxy(url, {
+    type: 'text',
+    timeout: 10000,
+    retries: 0,
+    proxyReferer: HOST + '/',
+    headers: {
+      'User-Agent': USER_AGENT
+    }
+  }).catch(function(){ return ''; });
+
+  if (!html) return [];
+  var items = await resolveEpisodePage(url, meta).catch(function(){ return []; });
+  if (items.length) return items;
+
+  var direct = parsePlayerOptions(html, meta, url);
+  return direct.length ? direct : [];
+}
+
+mod.providers = mod.providers || {};
+mod.providers.cdnmovies = {
+  key: 'cdnmovies',
+  title: 'CDNMovies',
+  search: search
+};
+
+})(window.__LORDFILM_AGG__ = window.__LORDFILM_AGG__ || {});
+
+
+// ---- fanserials.js ----
+(function(mod){
+'use strict';
+
+var shared = mod.shared;
+var network = mod.network;
+var balance = mod.core.balance;
+
+var HOST = 'https://lomont.site/gt/';
+var USER_AGENT = (typeof navigator !== 'undefined' && navigator.userAgent) || 'Mozilla/5.0';
+
+function cleanText(value){
+  return shared.clean(value || '');
+}
+
+function extractNumber(value){
+  var match = String(value || '').match(/(\d{1,4})/);
+  return match ? parseInt(match[1], 10) : 0;
+}
+
+function makeMapFromFile(file){
+  return balance.sourceMapFromText(file || '', null);
+}
+
+function makeItem(meta, translation, season, episode){
+  var voice = cleanText(translation.voice_name || translation.title || translation.comment || 'Original');
+  return {
+    id: ['fanserials', meta.kinopoisk_id || meta.imdb_id || meta.title || 'unknown', season || 0, episode || 0, voice, translation.voice_id || translation.id || ''].join('|'),
+    provider: 'fanserials',
+    providerLabel: 'FanSerials',
+    voice: voice,
+    season: season || 0,
+    episode: episode || 0,
+    maxQuality: translation.max_quality ? String(translation.max_quality) + 'p' : '',
+    title: season && episode ? ('S' + season + 'E' + episode + ' | ' + voice) : voice,
+    media: translation,
+    loadSourceMap: async function(){
+      if (translation.qualitys && typeof translation.qualitys === 'object') {
+        var map = {};
+        Object.keys(translation.qualitys).forEach(function(label){
+          if (translation.qualitys[label]) map[label] = network.proxifyStream(translation.qualitys[label]);
+        });
+        if (Object.keys(map).length) return map;
+      }
+      if (translation.file) return makeMapFromFile(translation.file);
+      if (translation.url) return balance.sourceMapFromText(translation.url, null);
+      return {};
+    }
+  };
+}
+
+function walk(node, path, out, meta){
+  if (!node) return;
+
+  if (Array.isArray(node)) {
+    if (node.length && node[0] && typeof node[0] === 'object' && (node[0].voice_id != null || node[0].voice_name != null)) {
+      var season = extractNumber(path[0]);
+      var episode = extractNumber(path[1]);
+      node.forEach(function(translation){
+        if (translation && (translation.voice_id != null || translation.voice_name != null)) {
+          out.push(makeItem(meta, translation, season, episode));
+        }
+      });
+      return;
+    }
+
+    node.forEach(function(child, index){
+      walk(child, path.concat(String(index)), out, meta);
+    });
+    return;
+  }
+
+  if (typeof node !== 'object') return;
+
+  if (node.voice_id != null || node.voice_name != null) {
+    out.push(makeItem(meta, node, extractNumber(path[0]), extractNumber(path[1])));
+    return;
+  }
+
+  Object.keys(node).forEach(function(key){
+    walk(node[key], path.concat(key), out, meta);
+  });
+}
+
+async function search(meta){
+  var id = meta && meta.kinopoisk_id ? String(meta.kinopoisk_id) : '';
+  if (!id) return [];
+
+  var url = HOST + encodeURIComponent(id);
+  url = Lampa.Utils.addUrlComponent(url, 'season=1');
+  url = Lampa.Utils.addUrlComponent(url, 'episode=1');
+  url = Lampa.Utils.addUrlComponent(url, 'alloff=true');
+
+  var html = await network.requestPreferProxy(url, {
+    type: 'text',
+    timeout: 10000,
+    retries: 0,
+    proxyReferer: HOST,
+    headers: {
+      'User-Agent': USER_AGENT
+    }
+  }).catch(function(){ return ''; });
+
+  if (!html) return [];
+
+  var match = html.match(/<div id="inputData"[^>]*>(\{.*?\})<\/div>/);
+  if (!match || !match[1]) return [];
+
+  var json = balance.parseJsonSafe(match[1]);
+  if (!json) return [];
+
+  var items = [];
+  walk(json, [], items, meta);
+  return shared.dedupeItems(items).slice(0, 200);
+}
+
+mod.providers = mod.providers || {};
+mod.providers.fanserials = {
+  key: 'fanserials',
+  title: 'FanSerials',
+  search: search
+};
+
+})(window.__LORDFILM_AGG__ = window.__LORDFILM_AGG__ || {});
+
+
+// ---- videoseed.js ----
+(function(mod){
+'use strict';
+
+var shared = mod.shared;
+var network = mod.network;
+var balance = mod.core.balance;
+
+var HOST = 'https://kinoserials.net';
+var EMBED = 'https://api.videoseed.tv/apiv2.php';
+var USER_AGENT = (typeof navigator !== 'undefined' && navigator.userAgent) || 'Mozilla/5.0';
+var Suffix = 'sfVxqv2oJkWh4y9a3k4AqT8mQ8o6v9p0';
+var HEX = '0123456789abcdef';
+
+function cleanText(value){
+  return shared.clean(value || '');
+}
+
+function extractNumber(value){
+  var match = String(value || '').match(/(\d{1,4})/);
+  return match ? parseInt(match[1], 10) : 0;
+}
+
+function mapFromSources(sources){
+  var map = {};
+  if (!sources) return map;
+
+  if (sources.mpeg2kUrl) map['4K'] = network.proxifyStream(sources.mpeg2kUrl);
+  if (sources.mpeg4kUrl) map['2K'] = network.proxifyStream(sources.mpeg4kUrl);
+  if (sources.mpegQhdUrl) map['1440p'] = network.proxifyStream(sources.mpegQhdUrl);
+  if (sources.mpegFullHdUrl) map['1080p'] = network.proxifyStream(sources.mpegFullHdUrl);
+  if (sources.mpegHighUrl) map['720p'] = network.proxifyStream(sources.mpegHighUrl);
+  if (sources.mpegMediumUrl) map['480p'] = network.proxifyStream(sources.mpegMediumUrl);
+  if (sources.mpegLowUrl) map['360p'] = network.proxifyStream(sources.mpegLowUrl);
+  if (sources.mpegLowestUrl) map['240p'] = network.proxifyStream(sources.mpegLowestUrl);
+  if (sources.mpegTinyUrl) map['144p'] = network.proxifyStream(sources.mpegTinyUrl);
+  if (!Object.keys(map).length && sources.hlsUrl) map['Auto HLS'] = network.proxifyStream(sources.hlsUrl);
+  return map;
+}
+
+function randomHex(len){
+  var out = '';
+  for (var i = 0; i < len; i++) {
+    out += HEX.charAt(Math.floor(Math.random() * HEX.length));
+  }
+  return out;
+}
+
+function makeItem(meta, translation, season, episode){
+  var voice = cleanText(translation.voice_name || translation.title || translation.comment || 'Original');
+  return {
+    id: ['videoseed', meta.kinopoisk_id || meta.imdb_id || meta.title || 'unknown', season || 0, episode || 0, voice, translation.voice_id || translation.id || ''].join('|'),
+    provider: 'videoseed',
+    providerLabel: 'VideoSeed',
+    voice: voice,
+    season: season || 0,
+    episode: episode || 0,
+    maxQuality: translation.max_quality ? String(translation.max_quality) + 'p' : '',
+    title: season && episode ? ('S' + season + 'E' + episode + ' | ' + voice) : voice,
+    media: translation,
+    loadSourceMap: async function(){
+      if (translation.sources) return mapFromSources(translation.sources);
+      if (translation.file) return balance.sourceMapFromText(translation.file, null);
+      if (translation.url) return balance.sourceMapFromText(translation.url, null);
+      return {};
+    }
+  };
+}
+
+function walk(node, path, out, meta){
+  if (!node) return;
+
+  if (Array.isArray(node)) {
+    if (node.length && node[0] && typeof node[0] === 'object' && (node[0].voice_id != null || node[0].voice_name != null || node[0].file)) {
+      var season = extractNumber(path[0]);
+      var episode = extractNumber(path[1]);
+      node.forEach(function(translation){
+        if (translation && (translation.voice_id != null || translation.voice_name != null || translation.file)) {
+          out.push(makeItem(meta, translation, season, episode));
+        }
+      });
+      return;
+    }
+
+    node.forEach(function(child, index){
+      walk(child, path.concat(String(index)), out, meta);
+    });
+    return;
+  }
+
+  if (typeof node !== 'object') return;
+
+  if (node.voice_id != null || node.voice_name != null || node.file) {
+    out.push(makeItem(meta, node, extractNumber(path[0]), extractNumber(path[1])));
+    return;
+  }
+
+  Object.keys(node).forEach(function(key){
+    walk(node[key], path.concat(key), out, meta);
+  });
+}
+
+async function search(meta){
+  var id = meta && meta.kinopoisk_id ? String(meta.kinopoisk_id) : '';
+  if (!id) return [];
+
+  var api = EMBED;
+  api = Lampa.Utils.addUrlComponent(api, 'item=' + (meta.type === 'tv' ? 'serial' : 'movie'));
+  api = Lampa.Utils.addUrlComponent(api, 'kp=' + encodeURIComponent(id));
+  api = Lampa.Utils.addUrlComponent(api, Suffix);
+
+  var json = await network.requestPreferProxy(api, {
+    type: 'json',
+    timeout: 10000,
+    retries: 0,
+    headers: {
+      'User-Agent': USER_AGENT
+    },
+    proxyReferer: HOST + '/'
+  }).catch(function(){ return null; });
+
+  if (!(json && json.data && json.data[0] && json.data[0].iframe)) return [];
+
+  var iframeUrl = String(json.data[0].iframe || '');
+  if (!iframeUrl) return [];
+
+  var parsed = null;
+  try {
+    parsed = new URL(iframeUrl, HOST);
+  } catch (e) {}
+
+  var tokenizedUrl = HOST + (parsed ? parsed.pathname.replace(/^\//, '') : String(iframeUrl || '').replace(/^https?:\/\/[^/]+\//, ''));
+  tokenizedUrl = Lampa.Utils.addUrlComponent(tokenizedUrl, 'token=' + randomHex(32));
+
+  var html = await network.requestPreferProxy(tokenizedUrl, {
+    type: 'text',
+    timeout: 10000,
+    retries: 0,
+    proxyReferer: iframeUrl,
+    headers: {
+      'User-Agent': USER_AGENT
+    }
+  }).catch(function(){ return ''; });
+
+  if (!html) return [];
+
+  var match = html.match(/<div id="inputData"[^>]*>(\{.*?\})<\/div>/);
+  if (!match || !match[1]) return [];
+
+  var jsonData = balance.parseJsonSafe(match[1]);
+  if (!jsonData) return [];
+
+  var items = [];
+  walk(jsonData, [], items, meta);
+  return shared.dedupeItems(items).slice(0, 200);
+}
+
+mod.providers = mod.providers || {};
+mod.providers.videoseed = {
+  key: 'videoseed',
+  title: 'VideoSeed',
+  search: search
+};
+
+})(window.__LORDFILM_AGG__ = window.__LORDFILM_AGG__ || {});
+
+
+// ---- anilibria.js ----
+(function(mod){
+'use strict';
+
+var shared = mod.shared;
+var network = mod.network;
+
+var HOST = 'https://api.anilibria.tv/v3/';
+
+function cleanText(value){
+  return shared.clean(value || '');
+}
+
+function extractNumber(value){
+  var match = String(value || '').match(/(\d{1,4})/);
+  return match ? parseInt(match[1], 10) : 0;
+}
+
+function makeMapFromEpisode(hls){
+  var map = {};
+  if (hls && hls.host && hls.fhd) map['1080p'] = network.proxifyStream('https://' + hls.host + hls.fhd);
+  if (hls && hls.host && hls.hd) map['720p'] = network.proxifyStream('https://' + hls.host + hls.hd);
+  if (hls && hls.host && hls.sd) map['480p'] = network.proxifyStream('https://' + hls.host + hls.sd);
+  return map;
+}
+
+function makeItem(meta, release, episode, key){
+  var title = cleanText((release.names && (release.names.ru || release.names.en || release.names.alternative)) || release.ru_title || release.en_title || meta.title || 'Original');
+  var epNum = episode && (episode.episode != null ? episode.episode : episode.ordinal != null ? episode.ordinal : extractNumber(key));
+  var map = makeMapFromEpisode(episode && episode.hls || {});
+
+  return {
+    id: ['anilibria', release.id || release.slug_url || meta.title || 'unknown', epNum || 0, title].join('|'),
+    provider: 'anilibria',
+    providerLabel: 'AniLibria',
+    voice: title,
+    season: 1,
+    episode: epNum || 0,
+    maxQuality: Object.keys(map)[0] || '1080p',
+    title: epNum ? ('E' + epNum + ' | ' + title) : title,
+    media: episode || release,
+    sourceMap: map,
+    loadSourceMap: async function(){
+      return map;
+    }
+  };
+}
+
+function releaseFilterUrl(title){
+  var url = HOST + 'title/search';
+  url = Lampa.Utils.addUrlComponent(url, 'filter=names,season,type,player');
+  url = Lampa.Utils.addUrlComponent(url, 'limit=20');
+  url = Lampa.Utils.addUrlComponent(url, 'search=' + encodeURIComponent(title));
+  return url;
+}
+
+async function search(meta){
+  var title = meta && (meta.title || meta.original_title || meta.original_name || '');
+  if (!title) return [];
+
+  var json = await network.requestPreferProxy(releaseFilterUrl(title), {
+    type: 'json',
+    timeout: 15000,
+    retries: 0,
+    proxyReferer: HOST
+  }).catch(function(){ return null; });
+
+  var list = json && Array.isArray(json.list) ? json.list : [];
+  if (!list.length) return [];
+
+  for (var i = 0; i < list.length; i++) {
+    var release = list[i];
+    if (!(release && release.player && release.player.list && Object.keys(release.player.list).length)) continue;
+
+    var items = [];
+    Object.keys(release.player.list).forEach(function(key){
+      var episode = release.player.list[key];
+      if (!episode) return;
+      items.push(makeItem(meta, release, episode, key));
+    });
+
+    if (items.length) return shared.dedupeItems(items).slice(0, 200);
+  }
+
+  return [];
+}
+
+mod.providers = mod.providers || {};
+mod.providers.anilibria = {
+  key: 'anilibria',
+  title: 'AniLibria',
+  search: search
+};
+
+})(window.__LORDFILM_AGG__ = window.__LORDFILM_AGG__ || {});
+
+
+// ---- anilibria2.js ----
+(function(mod){
+'use strict';
+
+var shared = mod.shared;
+var network = mod.network;
+
+var HOST = 'https://api.anilibria.app/api/v1/';
+
+function cleanText(value){
+  return shared.clean(value || '');
+}
+
+function extractNumber(value){
+  var match = String(value || '').match(/(\d{1,4})/);
+  return match ? parseInt(match[1], 10) : 0;
+}
+
+function makeMapFromEpisode(episode){
+  var map = {};
+  if (episode && episode.hls_1080) map['1080p'] = network.proxifyStream(episode.hls_1080);
+  if (episode && episode.hls_720) map['720p'] = network.proxifyStream(episode.hls_720);
+  if (episode && episode.hls_480) map['480p'] = network.proxifyStream(episode.hls_480);
+  return map;
+}
+
+function makeItem(meta, release, episode, key){
+  var title = cleanText((release.name && (release.name.main || release.name.english || release.name.alternative)) || release.ru_title || release.en_title || meta.title || 'Original');
+  var epNum = episode && (episode.episode != null ? episode.episode : episode.ordinal != null ? episode.ordinal : extractNumber(key));
+  var map = makeMapFromEpisode(episode || {});
+
+  return {
+    id: ['anilibria2', release.id || release.slug_url || meta.title || 'unknown', epNum || 0, title].join('|'),
+    provider: 'anilibria2',
+    providerLabel: 'AniLibria2',
+    voice: title,
+    season: 1,
+    episode: epNum || 0,
+    maxQuality: Object.keys(map)[0] || '1080p',
+    title: epNum ? ('E' + epNum + ' | ' + title) : title,
+    media: episode || release,
+    sourceMap: map,
+    loadSourceMap: async function(){
+      return map;
+    }
+  };
+}
+
+function releaseSearchUrl(title){
+  var url = HOST + 'app/search/releases';
+  url = Lampa.Utils.addUrlComponent(url, 'query=' + encodeURIComponent(title));
+  return url;
+}
+
+function releaseUrl(id){
+  return HOST + 'anime/releases/' + encodeURIComponent(id);
+}
+
+async function search(meta){
+  var title = meta && (meta.title || meta.original_title || meta.original_name || '');
+  if (!title) return [];
+
+  var json = await network.requestPreferProxy(releaseSearchUrl(title), {
+    type: 'json',
+    timeout: 15000,
+    retries: 0,
+    proxyReferer: HOST
+  }).catch(function(){ return null; });
+
+  var items = json && Array.isArray(json.data) ? json.data : [];
+  if (!items.length) return [];
+
+  for (var i = 0; i < items.length; i++) {
+    var release = items[i];
+    var full = await network.requestPreferProxy(releaseUrl(release.id), {
+      type: 'json',
+      timeout: 15000,
+      retries: 0,
+      proxyReferer: HOST
+    }).catch(function(){ return null; });
+
+    if (!(full && full.episodes && full.episodes.length)) continue;
+
+    var out = [];
+    full.episodes.forEach(function(episode, index){
+      out.push(makeItem(meta, full, episode, index + 1));
+    });
+
+    if (out.length) return shared.dedupeItems(out).slice(0, 200);
+  }
+
+  return [];
+}
+
+mod.providers = mod.providers || {};
+mod.providers.anilibria2 = {
+  key: 'anilibria2',
+  title: 'AniLibria2',
+  search: search
+};
+
+})(window.__LORDFILM_AGG__ = window.__LORDFILM_AGG__ || {});
+
+
+// ---- animelib.js ----
+(function(mod){
+'use strict';
+
+var shared = mod.shared;
+var network = mod.network;
+
+var HOST = 'https://api2.mangalib.me/api/';
+var PLAYER_SERVERS = [
+  { name: 'Основной', url: 'https://video1.anilib.me/.%D0%B0s/' },
+  { name: 'Резервный 1', url: 'https://video2.anilib.me/.%D0%B0s/' },
+  { name: 'Резервный 2', url: 'https://video3.anilib.me/.%D0%B0s/' }
+];
+
+function cleanText(value){
+  return shared.clean(value || '');
+}
+
+function makeMapFromPlayer(player){
+  var map = {};
+  var server = PLAYER_SERVERS[0];
+  if (!(player && player.video && player.video.quality && player.video.quality.length)) return map;
+
+  player.video.quality.forEach(function(q){
+    var quality = q.quality || q.height || 0;
+    var href = q.href || '';
+    if (!href) return;
+    map[(quality ? quality + 'p' : 'Auto')] = network.proxifyStream(server.url + href);
+  });
+
+  return map;
+}
+
+function makeItem(meta, episode, player){
+  var voice = cleanText(player.team && player.team.name || player.voice || 'Original');
+  var season = 1;
+  var episodeNum = episode.item_number || episode.episode || episode.ordinal || 0;
+  var map = makeMapFromPlayer(player);
+
+  return {
+    id: ['animelib', meta.title || meta.original_title || meta.original_name || 'unknown', season, episodeNum, voice, player.team && player.team.id || ''].join('|'),
+    provider: 'animelib',
+    providerLabel: 'Animelib',
+    voice: voice,
+    season: season,
+    episode: episodeNum,
+    maxQuality: Object.keys(map)[0] || 'Auto',
+    title: 'E' + episodeNum + ' | ' + voice,
+    media: {
+      episode: episode,
+      player: player
+    },
+    sourceMap: map,
+    loadSourceMap: async function(){
+      return makeMapFromPlayer(player);
+    }
+  };
+}
+
+function searchAnimeUrl(title){
+  var url = HOST + 'anime?fields[]=rate_avg&fields[]=rate&fields[]=releaseDate';
+  url = Lampa.Utils.addUrlComponent(url, 'q=' + encodeURIComponent(title));
+  return url;
+}
+
+function episodesUrl(animeSlug){
+  var url = HOST + 'episodes';
+  url = Lampa.Utils.addUrlComponent(url, 'anime_id=' + encodeURIComponent(animeSlug));
+  return url;
+}
+
+function episodePlayersUrl(episodeId){
+  return HOST + 'episodes/' + encodeURIComponent(episodeId);
+}
+
+async function search(meta){
+  var title = meta && (meta.title || meta.original_title || meta.original_name || '');
+  if (!title) return [];
+
+  var json = await network.requestPreferProxy(searchAnimeUrl(title), {
+    type: 'json',
+    timeout: 15000,
+    retries: 0,
+    proxyReferer: HOST
+  }).catch(function(){ return null; });
+
+  var list = json && json.data ? json.data : [];
+  if (!Array.isArray(list) || !list.length) return [];
+
+  var candidates = list.slice(0, 5);
+  var items = [];
+
+  for (var i = 0; i < candidates.length; i++) {
+    var anime = candidates[i];
+    var episodes = await network.requestPreferProxy(episodesUrl(anime.slug_url), {
+      type: 'json',
+      timeout: 15000,
+      retries: 0,
+      proxyReferer: HOST
+    }).catch(function(){ return null; });
+
+    var eps = episodes && episodes.data ? episodes.data : [];
+    if (!Array.isArray(eps) || !eps.length) continue;
+
+    for (var e = 0; e < eps.length; e++) {
+      var episode = eps[e];
+      if (!episode || !episode.id) continue;
+
+      var episodeDetail = await network.requestPreferProxy(episodePlayersUrl(episode.id), {
+        type: 'json',
+        timeout: 15000,
+        retries: 0,
+        proxyReferer: HOST
+      }).catch(function(){ return null; });
+
+      var players = episodeDetail && episodeDetail.data && Array.isArray(episodeDetail.data.players)
+        ? episodeDetail.data.players.filter(function(p){ return p.player === 'Animelib'; })
+        : [];
+
+      players.forEach(function(player){
+        if (!(player && player.video && player.video.quality && player.video.quality.length)) return;
+        items.push(makeItem(meta, episode, player));
+      });
+    }
+
+    if (items.length) break;
+  }
+
+  return shared.dedupeItems(items).slice(0, 200);
+}
+
+mod.providers = mod.providers || {};
+mod.providers.animelib = {
+  key: 'animelib',
+  title: 'Animelib',
+  search: search
+};
+
+})(window.__LORDFILM_AGG__ = window.__LORDFILM_AGG__ || {});
+
 
 // ---- providers.js ----
 (function(mod){

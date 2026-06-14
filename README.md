@@ -15,6 +15,7 @@ Standalone Lampa plugin focused on ReYohoho-based online playback.
 - `ReYohoho+` button in Lampa movie cards
 - `ReYohoho Aggregator` component and manifest identity
 - ReYohoho provider with live `KinoBD`/`Kinobox` integration
+- Ported balancers from `online_mod.js`: `Lumex2`, `CDNMovies`, `FanSerials`, `VideoSeed`, `AniLibria`, `AniLibria2`, `Animelib`
 - filtered provider output to skip obvious trailer and pseudo-source entries
 - Worker allowlist updated for current ReYohoho/KinoBD iframe and media hosts
 

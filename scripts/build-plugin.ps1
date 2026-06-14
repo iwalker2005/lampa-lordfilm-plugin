@@ -12,6 +12,7 @@ $distReyoBundle = Join-Path $root 'reyohoho.js'
 $parts = @(
   'core/utils.js',
   'core/network.js',
+  'core/balance_utils.js',
   'core/reyohoho_catalog.js',
   'providers/reyohoho.js',
   'providers/lordfilm.js',
@@ -22,6 +23,13 @@ $parts = @(
   'providers/rezka.js',
   'providers/filmix.js',
   'providers/kinobase.js',
+  'providers/lumex2.js',
+  'providers/cdnmovies.js',
+  'providers/fanserials.js',
+  'providers/videoseed.js',
+  'providers/anilibria.js',
+  'providers/anilibria2.js',
+  'providers/animelib.js',
   'core/providers.js',
   'index.js'
 )

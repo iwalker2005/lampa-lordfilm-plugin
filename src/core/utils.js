@@ -35,7 +35,14 @@ var PROVIDERS = [
   { key: 'cdnvideohub', title: 'CDNVideoHub', enabled: true },
   { key: 'rezka', title: 'HDRezka', enabled: true },
   { key: 'filmix', title: 'Filmix', enabled: true },
-  { key: 'kinobase', title: 'Kinobase', enabled: true }
+  { key: 'kinobase', title: 'Kinobase', enabled: true },
+  { key: 'lumex2', title: 'Lumex2', enabled: true },
+  { key: 'cdnmovies', title: 'CDNMovies', enabled: true },
+  { key: 'fanserials', title: 'FanSerials', enabled: true },
+  { key: 'videoseed', title: 'VideoSeed', enabled: true },
+  { key: 'anilibria', title: 'AniLibria', enabled: true },
+  { key: 'anilibria2', title: 'AniLibria2', enabled: true },
+  { key: 'animelib', title: 'Animelib', enabled: true }
 ];
 
 var MAP = {
